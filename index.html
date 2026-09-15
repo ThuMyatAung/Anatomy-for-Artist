@@ -73,7 +73,7 @@
         .spinner { width: 34px; height: 34px; border: 3px solid #272738; border-top-color: #6366f1; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
-    <!-- Three.js + OrbitControls + ColladaLoader + GLTFLoader + JSZip -->
+    <!-- Core Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/ColladaLoader.js"></script>
@@ -155,16 +155,6 @@
         <div id="tab-pose" class="tab-content">
             <div id="rig-status-box">Detecting Rig...</div>
 
-            <div class="section-title">Pose Presets</div>
-            <div class="control-group">
-                <select id="sel-pose" onchange="applyPresetPose(this.value)">
-                    <option value="neutral">Neutral A-Pose</option>
-                    <option value="contrapposto" selected>Contrapposto (အလေးပေးရပ်ဟန်)</option>
-                    <option value="sitting">Sitting (ထိုင်ဟန်)</option>
-                    <option value="action">Dynamic Walk (လှုပ်ရှားဟန်)</option>
-                </select>
-            </div>
-
             <div class="section-title">Joint Manipulation (FK)</div>
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
                 <label style="margin: 0;">Select Joint:</label>
@@ -177,19 +167,19 @@
             </div>
             <div class="control-group">
                 <label>Rotate X: <span id="val-rx">0°</span></label>
-                <input type="range" id="rot-x" min="-120" max="120" value="0" oninput="updateBoneRotation()">
+                <input type="range" id="rot-x" min="-90" max="90" value="0" oninput="updateBoneRotation()">
             </div>
             <div class="control-group">
                 <label>Rotate Y: <span id="val-ry">0°</span></label>
-                <input type="range" id="rot-y" min="-120" max="120" value="0" oninput="updateBoneRotation()">
+                <input type="range" id="rot-y" min="-90" max="90" value="0" oninput="updateBoneRotation()">
             </div>
             <div class="control-group">
                 <label>Rotate Z: <span id="val-rz">0°</span></label>
-                <input type="range" id="rot-z" min="-120" max="120" value="0" oninput="updateBoneRotation()">
+                <input type="range" id="rot-z" min="-90" max="90" value="0" oninput="updateBoneRotation()">
             </div>
             <div class="grid-2">
-                <button onclick="resetCurrentBone()">Reset Joint</button>
-                <button onclick="applyPresetPose(document.getElementById('sel-pose').value)">Reset Pose</button>
+                <button onclick="resetCurrentBone()">Reset Selected</button>
+                <button onclick="resetAllBonesToRestPose()">Reset All to Rest Pose</button>
             </div>
         </div>
 
@@ -224,9 +214,6 @@
         <div id="tab-file" class="tab-content">
             <div class="section-title">ZIP Source (.dae / .glb)</div>
             <p id="zip-error-msg" style="font-size: 11px; color: #f87171; line-height: 1.4; margin-bottom: 8px;"></p>
-            <p style="font-size: 11px; color: #94a3b8; line-height: 1.4; margin-bottom: 8px;">
-                Drive ထဲရှိ <code>.dae</code> ဖိုင်များကို Zip ချုံ့ထားသော <code>models.zip</code> ကို အောက်တွင် ရွေးချယ်နိုင်ပါသည်-
-            </p>
             <input type="file" id="zip-input" accept=".zip" onchange="onZipFileUploaded(event)" style="width: 100%;">
         </div>
     </div>
@@ -253,7 +240,6 @@
             document.getElementById(id).classList.add('active');
         }
 
-        // Exact filenames mapping from your Drive folder (supports both .dae and .glb)
         const MODEL_MANIFEST = {
             african: {
                 female: { adult: "african female_adult", child: "African Female_Child", elderly: "African Female_Elderly", teen: "African Female_Teen", toddler: "African Female_Toddler" },
@@ -269,7 +255,6 @@
             }
         };
 
-        // Simplified Major Joints for Artists (out of 163 bones)
         const MAJOR_BONES = [
             { key: 'head', label: 'Head (ဦးခေါင်း)' },
             { key: 'neck01', label: 'Neck (လည်ပင်း)' },
@@ -298,7 +283,7 @@
         }
 
         let scene, camera, renderer, controls;
-        let characterModel, bones = {}, originalMaterials = new Map();
+        let characterModel, bones = {}, initialBoneRotations = {};
         let keyLight, fillLight, rimLight, ambientLight;
         let loadedZip = null;
         const colladaLoader = new THREE.ColladaLoader();
@@ -318,7 +303,7 @@
             scene.background = new THREE.Color(0x0e0e13);
 
             camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
-            camera.position.set(0, 1.3, window.innerWidth <= 768 ? 4.4 : 3.8);
+            camera.position.set(0, 1.3, window.innerWidth <= 768 ? 4.2 : 3.6);
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -348,7 +333,7 @@
         }
 
         function setupLights() {
-            ambientLight = new THREE.AmbientLight(0x22222e, 0.6);
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
             scene.add(ambientLight);
 
             keyLight = new THREE.DirectionalLight(0xfff3e3, 1.5);
@@ -357,7 +342,7 @@
             keyLight.shadow.mapSize.height = 1024;
             scene.add(keyLight);
 
-            fillLight = new THREE.DirectionalLight(0x8eb3ff, 0.45);
+            fillLight = new THREE.DirectionalLight(0x8eb3ff, 0.5);
             scene.add(fillLight);
 
             rimLight = new THREE.DirectionalLight(0xffffff, 2.2);
@@ -413,7 +398,7 @@
                 await onModelChange();
             } else {
                 setZipBadge(false, "models.zip Not Found");
-                document.getElementById('zip-error-msg').innerText = "GitHub Pages တွင် models.zip ရှာမတွေ့ပါ (" + lastErr + ")။ Data tab မှ ZIP ကို ရွေးပေးပါခင်ဗျာ။";
+                document.getElementById('zip-error-msg').innerText = "models.zip ရှာမတွေ့ပါ (" + lastErr + ")။ Data tab မှ ZIP ကို ရွေးပေးပါခင်ဗျာ။";
                 hideLoading();
             }
         }
@@ -439,7 +424,6 @@
             badge.className = "status-badge " + (ok ? "ok" : "warn");
         }
 
-        // Fuzzy match without spaces, casing or extension (.dae or .glb)
         function findEntryInZip(zip, baseTarget) {
             const cleanTarget = baseTarget.toLowerCase().replace(/[^a-z0-9]/g, '');
             for (const path in zip.files) {
@@ -486,31 +470,45 @@
             }
         }
 
+        // ROBUST AUTO-SCALING & CENTERING
         function processLoadedModel(model) {
             if (characterModel) scene.remove(characterModel);
             characterModel = model;
             bones = {};
-            originalMaterials.clear();
+            initialBoneRotations = {};
 
-            // Auto-scale to human height (MakeHuman DAE uses decimeters)
-            const box = new THREE.Box3().setFromObject(characterModel);
-            const size = new THREE.Vector3();
+            // 1. Reset transforms
+            characterModel.position.set(0, 0, 0);
+            characterModel.scale.set(1, 1, 1);
+            characterModel.rotation.set(0, 0, 0);
+            characterModel.updateMatrixWorld(true);
+
+            // 2. Measure raw bounds
+            let box = new THREE.Box3().setFromObject(characterModel);
+            let size = new THREE.Vector3();
             box.getSize(size);
-            if (size.y > 5.0) {
-                const s = 1.75 / size.y;
+
+            // MakeHuman decimeter scale fix: scale to standard human height (~1.75m)
+            if (size.y > 0) {
+                const targetHeight = 1.75;
+                const s = targetHeight / size.y;
                 characterModel.scale.set(s, s, s);
+                characterModel.updateMatrixWorld(true);
             }
 
-            // Align feet to ground
-            const newBox = new THREE.Box3().setFromObject(characterModel);
-            characterModel.position.set(0, -newBox.min.y, 0);
+            // 3. Align directly on the floor (y = 0) and center at x = 0, z = 0
+            box = new THREE.Box3().setFromObject(characterModel);
+            let center = new THREE.Vector3();
+            box.getCenter(center);
+            characterModel.position.set(-center.x, -box.min.y, -center.z);
+            characterModel.updateMatrixWorld(true);
 
-            // Collect all 163 Bones from Rig
+            // 4. Collect Bones and Save REST POSES
             characterModel.traverse((child) => {
                 if (child.isMesh) {
+                    child.frustumCulled = false; // CRITICAL: prevents skinned mesh from disappearing!
                     child.castShadow = true;
                     child.receiveShadow = true;
-                    originalMaterials.set(child, child.material);
 
                     if (child.isSkinnedMesh && child.skeleton && child.skeleton.bones) {
                         child.skeleton.bones.forEach(b => {
@@ -523,44 +521,55 @@
                 }
             });
 
+            // Cache Initial Rotations (Rest Pose)
+            Object.keys(bones).forEach(bName => {
+                const b = bones[bName];
+                initialBoneRotations[bName] = {
+                    x: b.rotation.x,
+                    y: b.rotation.y,
+                    z: b.rotation.z
+                };
+            });
+
             scene.add(characterModel);
 
+            // Update UI
             const numBones = Object.keys(bones).length;
             const rigStatus = document.getElementById('rig-status-box');
-            if (numBones > 0) {
-                rigStatus.innerHTML = `<span style="color:#4ade80;">● Rig Active:</span> <b>${numBones}</b> Bones Ready for Posing!`;
-            } else {
-                rigStatus.innerHTML = `<span style="color:#f87171;">● No Bones:</span> Skeleton မပါဝင်ပါ`;
-            }
+            rigStatus.innerHTML = `<span style="color:#4ade80;">● Rig Active:</span> <b>${numBones}</b> Bones Ready!`;
 
             populateBoneDropdown();
             applyShadingMode(document.getElementById('sel-shading').value);
-            applyPresetPose(document.getElementById('sel-pose').value);
             adjustHeight(document.getElementById('height-slider').value);
+
+            // Set camera target cleanly to the middle of the human
+            controls.target.set(0, 0.9, 0);
+            controls.update();
 
             hideLoading();
         }
 
+        // SHADING MODES (DoubleSide to avoid backface culling)
         function createStudioMaterial(type, isSkinned) {
+            const params = {
+                skinning: isSkinned,
+                side: THREE.DoubleSide
+            };
             if (type === 'clay') {
                 return new THREE.MeshStandardMaterial({
-                    color: 0xdfd7cb, roughness: 0.72, metalness: 0.0, flatShading: false,
-                    skinning: isSkinned
+                    ...params, color: 0xdfd7cb, roughness: 0.72, metalness: 0.0, flatShading: false
                 });
             } else if (type === 'planar') {
                 return new THREE.MeshStandardMaterial({
-                    color: 0xd6d6e2, roughness: 0.4, metalness: 0.05, flatShading: true,
-                    skinning: isSkinned
+                    ...params, color: 0xd6d6e2, roughness: 0.4, metalness: 0.05, flatShading: true
                 });
             } else if (type === 'ecorche') {
                 return new THREE.MeshStandardMaterial({
-                    color: 0x933030, roughness: 0.45, metalness: 0.08, flatShading: true,
-                    skinning: isSkinned
+                    ...params, color: 0x933030, roughness: 0.45, metalness: 0.08, flatShading: true
                 });
             } else if (type === 'wireframe') {
                 return new THREE.MeshBasicMaterial({
-                    color: 0x6366f1, wireframe: true,
-                    skinning: isSkinned
+                    ...params, color: 0x6366f1, wireframe: true
                 });
             }
             return null;
@@ -580,8 +589,7 @@
             document.getElementById('val-height').innerText = val + '%';
             if (!characterModel) return;
             const currentScaleX = characterModel.scale.x;
-            const scaleFactor = parseFloat(val) / 100.0;
-            characterModel.scale.y = currentScaleX * scaleFactor;
+            characterModel.scale.y = currentScaleX * (parseFloat(val) / 100.0);
         }
 
         function populateBoneDropdown() {
@@ -597,9 +605,8 @@
             }
 
             if (!showAllBonesFlag) {
-                // Show simplified list of major bones
                 MAJOR_BONES.forEach(item => {
-                    const match = findBoneName([item.key]);
+                    const match = allBoneNames.find(n => n.toLowerCase() === item.key.toLowerCase());
                     if (match) {
                         const opt = document.createElement('option');
                         opt.value = match;
@@ -608,7 +615,6 @@
                     }
                 });
             } else {
-                // Show all 163 bones
                 allBoneNames.forEach(b => {
                     const opt = document.createElement('option');
                     opt.value = b;
@@ -622,10 +628,14 @@
         function loadBoneRotations() {
             const name = document.getElementById('sel-bone').value;
             const b = bones[name];
+            const initRot = initialBoneRotations[name] || { x:0, y:0, z:0 };
             if (!b) return;
-            const rx = Math.round(THREE.MathUtils.radToDeg(b.rotation.x));
-            const ry = Math.round(THREE.MathUtils.radToDeg(b.rotation.y));
-            const rz = Math.round(THREE.MathUtils.radToDeg(b.rotation.z));
+
+            // Display delta degrees from rest pose
+            const rx = Math.round(THREE.MathUtils.radToDeg(b.rotation.x - initRot.x));
+            const ry = Math.round(THREE.MathUtils.radToDeg(b.rotation.y - initRot.y));
+            const rz = Math.round(THREE.MathUtils.radToDeg(b.rotation.z - initRot.z));
+
             document.getElementById('rot-x').value = rx;
             document.getElementById('rot-y').value = ry;
             document.getElementById('rot-z').value = rz;
@@ -637,24 +647,26 @@
         function updateBoneRotation() {
             const name = document.getElementById('sel-bone').value;
             const b = bones[name];
+            const initRot = initialBoneRotations[name] || { x:0, y:0, z:0 };
             if (!b) return;
 
-            const rx = parseFloat(document.getElementById('rot-x').value);
-            const ry = parseFloat(document.getElementById('rot-y').value);
-            const rz = parseFloat(document.getElementById('rot-z').value);
+            const dx = parseFloat(document.getElementById('rot-x').value);
+            const dy = parseFloat(document.getElementById('rot-y').value);
+            const dz = parseFloat(document.getElementById('rot-z').value);
 
-            b.rotation.x = THREE.MathUtils.degToRad(rx);
-            b.rotation.y = THREE.MathUtils.degToRad(ry);
-            b.rotation.z = THREE.MathUtils.degToRad(rz);
+            // Add rotation relative to initial rest pose
+            b.rotation.x = initRot.x + THREE.MathUtils.degToRad(dx);
+            b.rotation.y = initRot.y + THREE.MathUtils.degToRad(dy);
+            b.rotation.z = initRot.z + THREE.MathUtils.degToRad(dz);
             b.updateMatrixWorld(true);
 
             characterModel.traverse((child) => {
                 if (child.isSkinnedMesh && child.skeleton) child.skeleton.update();
             });
 
-            document.getElementById('val-rx').innerText = rx + '°';
-            document.getElementById('val-ry').innerText = ry + '°';
-            document.getElementById('val-rz').innerText = rz + '°';
+            document.getElementById('val-rx').innerText = dx + '°';
+            document.getElementById('val-ry').innerText = dy + '°';
+            document.getElementById('val-rz').innerText = dz + '°';
         }
 
         function resetCurrentBone() {
@@ -664,66 +676,15 @@
             updateBoneRotation();
         }
 
-        function findBoneName(keywords) {
-            const names = Object.keys(bones);
-            for (const kw of keywords) {
-                const match = names.find(n => n.toLowerCase() === kw.toLowerCase() || n.toLowerCase().includes(kw.toLowerCase()));
-                if (match) return match;
-            }
-            return null;
-        }
-
-        function setRot(boneName, x, y, z) {
-            if (!boneName || !bones[boneName]) return;
-            const b = bones[boneName];
-            b.rotation.x = THREE.MathUtils.degToRad(x);
-            b.rotation.y = THREE.MathUtils.degToRad(y);
-            b.rotation.z = THREE.MathUtils.degToRad(z);
-            b.updateMatrixWorld(true);
-        }
-
-        function applyPresetPose(pose) {
-            Object.values(bones).forEach(b => b.rotation.set(0,0,0));
-
-            const head = findBoneName(['head']);
-            const neck = findBoneName(['neck01']);
-            const spine3 = findBoneName(['spine03', 'spine04']);
-            const spine1 = findBoneName(['spine01']);
-            const root = findBoneName(['root']);
-            const l_arm = findBoneName(['upperarm01_L']);
-            const r_arm = findBoneName(['upperarm01_R']);
-            const l_forearm = findBoneName(['lowerarm01_L']);
-            const r_forearm = findBoneName(['lowerarm01_R']);
-            const l_thigh = findBoneName(['upperleg01_L']);
-            const r_thigh = findBoneName(['upperleg01_R']);
-            const l_calf = findBoneName(['lowerleg01_L']);
-            const r_calf = findBoneName(['lowerleg01_R']);
-
-            if (pose === 'contrapposto') {
-                setRot(root, 0, 0, 5);
-                setRot(spine1, -2, 4, -6);
-                setRot(spine3, 2, -3, 2);
-                setRot(head, 3, -12, 4);
-                setRot(r_thigh, -5, 0, 2);
-                setRot(l_thigh, 12, -8, -6);
-                setRot(l_calf, 24, 0, 0);
-                setRot(r_arm, 10, 0, 12);
-                setRot(r_forearm, 0, 0, 28);
-            } else if (pose === 'sitting') {
-                setRot(l_thigh, -85, 5, 0);
-                setRot(r_thigh, -85, -5, 0);
-                setRot(l_calf, -90, 0, 0);
-                setRot(r_calf, -90, 0, 0);
-                setRot(spine1, 8, 0, 0);
-            } else if (pose === 'action') {
-                setRot(spine1, 10, -18, 0);
-                setRot(head, -5, 20, 0);
-                setRot(l_arm, -45, 15, 25);
-                setRot(r_arm, 35, 0, -20);
-                setRot(r_thigh, -35, 10, 0);
-                setRot(r_calf, -45, 0, 0);
-            }
-
+        function resetAllBonesToRestPose() {
+            Object.keys(bones).forEach(bName => {
+                const b = bones[bName];
+                const initRot = initialBoneRotations[bName];
+                if (b && initRot) {
+                    b.rotation.set(initRot.x, initRot.y, initRot.z);
+                    b.updateMatrixWorld(true);
+                }
+            });
             characterModel.traverse((child) => {
                 if (child.isSkinnedMesh && child.skeleton) child.skeleton.update();
             });
