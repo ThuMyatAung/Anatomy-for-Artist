@@ -69,7 +69,7 @@
             z-index: 100; display: block;
         }
     </style>
-    <!-- Three.js + OrbitControls + ColladaLoader + GLTFLoader + JSZip -->
+    <!-- Core Three.js + Loaders -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/ColladaLoader.js"></script>
@@ -153,8 +153,8 @@
             <div class="section-title">Everyday Movement Presets</div>
             <div class="control-group">
                 <select id="sel-pose" onchange="applyPresetPose(this.value)">
-                    <option value="neutral">Neutral A-Pose (မူလ မတ်တပ်)</option>
-                    <option value="contrapposto" selected>Contrapposto (ဂန္ထဝင် အလေးပေးရပ်ဟန်)</option>
+                    <option value="neutral" selected>Neutral A-Pose (မူလ မတ်တပ်)</option>
+                    <option value="contrapposto">Contrapposto (ဂန္ထဝင် အလေးပေးရပ်ဟန်)</option>
                     <option value="sitting">Sitting (ကုလားထိုင် ထိုင်ဟန်)</option>
                     <option value="walking">Walking / Stride (လမ်းလျှောက်ဟန်)</option>
                     <option value="folded_arms">Folded Arms (လက်ပိုက်ရပ်ဟန်)</option>
@@ -265,6 +265,7 @@
         let keyLight, fillLight, rimLight, ambientLight;
         let loadedZip = null, colladaLoader, gltfLoader;
 
+        // 1. WEBGL 2 INITIALIZATION (CRITICAL: FIXES 163-BONE TEXTURE UNIFORM LIMIT)
         function init() {
             const container = document.getElementById('canvas-container');
             scene = new THREE.Scene();
@@ -273,7 +274,9 @@
             camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.set(0, 10, 30);
 
-            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl2', { antialias: true }) || canvas.getContext('webgl');
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, context: gl, antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.shadowMap.enabled = true;
@@ -305,7 +308,7 @@
         }
 
         function setupLights() {
-            ambientLight = new THREE.AmbientLight(0xffffff, 0.95);
+            ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
             scene.add(ambientLight);
 
             keyLight = new THREE.DirectionalLight(0xfff3e3, 1.8);
@@ -349,7 +352,7 @@
             }
         }
 
-        // AUTO-LOAD MODELS.ZIP
+        // 2. AUTO-LOAD MODELS.ZIP
         async function tryAutoLoadZip() {
             updateToast("Connecting to models.zip...");
             const candidates = ['models.zip', './models.zip', 'Models.zip', './Models.zip'];
@@ -442,7 +445,7 @@
             }
         }
 
-        // STRICT MATCHING ENGINE (NEVER LEAPS TO OTHER ETHNICITIES)
+        // 3. PRIORITY MATCHING ENGINE (ASIAN WINS 100% WHEN ASIAN IS PICKED)
         function findEntryInZip(zip, ethnic, gender, age) {
             const e = ethnic.toLowerCase().trim();
             const g = gender.toLowerCase().trim();
@@ -453,31 +456,39 @@
                 return !zip.files[k].dir && !low.includes('__macosx') && (low.endsWith('.dae') || low.endsWith('.glb'));
             });
 
-            // 1. Strict Match: Ethnicity + Gender + Age
-            for (const path of entries) {
-                const low = path.toLowerCase();
-                const matchE = low.includes(e) || (e === 'caucasian' && low.includes('caucasia'));
-                const matchG = (g === 'female') ? low.includes('female') : (low.includes('male') && !low.includes('female'));
-                const matchA = low.includes(a);
-
-                if (matchE && matchG && matchA) return path;
-            }
-
-            // 2. Fallback inside the SAME Ethnicity (e.g. Asian Model .dae)
-            for (const path of entries) {
-                const low = path.toLowerCase();
-                const matchE = low.includes(e) || (e === 'caucasian' && low.includes('caucasia'));
-                const matchG = (g === 'female') ? low.includes('female') : (low.includes('male') && !low.includes('female'));
-                if (matchE && matchG) return path;
-            }
+            let bestEntry = null;
+            let bestScore = -1;
 
             for (const path of entries) {
                 const low = path.toLowerCase();
-                const matchE = low.includes(e) || (e === 'caucasian' && low.includes('caucasia'));
-                if (matchE) return path;
+                let score = 0;
+
+                // Priority 1: Ethnicity (+100)
+                if (e === 'asian') {
+                    if (low.includes('asian')) score += 100;
+                } else if (e === 'african') {
+                    if (low.includes('african')) score += 100;
+                } else if (e === 'caucasian') {
+                    if (low.includes('caucasian') || low.includes('caucasia')) score += 100;
+                }
+
+                // Priority 2: Gender (+50)
+                if (g === 'female') {
+                    if (low.includes('female')) score += 50;
+                } else if (g === 'male') {
+                    if (low.includes('male') && !low.includes('female')) score += 50;
+                }
+
+                // Priority 3: Age (+20)
+                if (low.includes(a)) score += 20;
+
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestEntry = path;
+                }
             }
 
-            return entries[0] || null;
+            return bestEntry || entries[0] || null;
         }
 
         async function onModelConfigChange() {
@@ -498,6 +509,7 @@
 
         function parseAndLoadDae(daeText, filename) {
             try {
+                // Strip missing images and texture samplers to prevent WebGL 404 stalls
                 let cleanText = daeText.replace(/<library_images[\s\S]*?<\/library_images>/gi, '<library_images></library_images>');
                 cleanText = cleanText.replace(/<texture\b[^>]*\/>/gi, '');
                 cleanText = cleanText.replace(/<texture\b[\s\S]*?<\/texture>/gi, '');
@@ -510,7 +522,46 @@
             }
         }
 
-        // NATIVE STABLE RENDERING ENGINE (ZERO SHADER / SCALE CORRUPTION)
+        // 4. GUARANTEED OPAQUE MATERIAL CREATOR (REPLACES CORRUPTED DAE MATERIALS)
+        function createArtistMaterial(mode, isSkinned) {
+            const params = {
+                skinning: isSkinned,
+                side: THREE.DoubleSide,
+                transparent: false,
+                opacity: 1.0
+            };
+            if (mode === 'clay') {
+                return new THREE.MeshStandardMaterial({
+                    ...params,
+                    color: 0xd6cbb8,
+                    roughness: 0.65,
+                    metalness: 0.05
+                });
+            } else if (mode === 'planar') {
+                return new THREE.MeshStandardMaterial({
+                    ...params,
+                    color: 0xd2d2dc,
+                    roughness: 0.45,
+                    metalness: 0.05,
+                    flatShading: true
+                });
+            } else if (mode === 'ecorche') {
+                return new THREE.MeshStandardMaterial({
+                    ...params,
+                    color: 0x983232,
+                    roughness: 0.55
+                });
+            } else if (mode === 'wireframe') {
+                return new THREE.MeshBasicMaterial({
+                    ...params,
+                    color: 0x6366f1,
+                    wireframe: true
+                });
+            }
+            return null;
+        }
+
+        // 5. NATIVE HUMAN LOADER (NO SCALE COLLAPSE, FULL VISIBILITY)
         function loadRealHumanModel(model, filename) {
             if (characterModel) scene.remove(characterModel);
             characterModel = model;
@@ -518,7 +569,7 @@
             initialRotations = {};
             currentDeltas = {};
 
-            // Keep native (1, 1, 1) scale to prevent double-scaling matrix collapse
+            // Keep native scale & position so bone bind matrices never desync
             characterModel.position.set(0, 0, 0);
             characterModel.scale.set(1, 1, 1);
             characterModel.rotation.set(0, 0, 0);
@@ -531,15 +582,11 @@
                     child.castShadow = true;
                     child.receiveShadow = true;
 
-                    // Fix native Collada transparent = true bug directly on original material
-                    const fixMat = (m) => {
-                        m.transparent = false;
-                        m.opacity = 1.0;
-                        m.side = THREE.DoubleSide;
-                        m.needsUpdate = true;
-                    };
-                    if (Array.isArray(child.material)) child.material.forEach(fixMat);
-                    else if (child.material) fixMat(child.material);
+                    // Assign Guaranteed Opaque Plaster Material
+                    const isSkinned = Boolean(child.isSkinnedMesh);
+                    const mat = createArtistMaterial(document.getElementById('sel-shading').value, isSkinned);
+                    if (Array.isArray(child.material)) child.material = child.material.map(() => mat.clone());
+                    else child.material = mat;
 
                     if (child.isSkinnedMesh && child.skeleton && child.skeleton.bones) {
                         child.skeleton.bones.forEach(b => {
@@ -560,7 +607,7 @@
                 }
             });
 
-            // Cache Initial Rotations
+            // Cache Initial Bone Rotations
             Object.keys(bones).forEach(bName => {
                 const b = bones[bName];
                 b.updateMatrix();
@@ -570,15 +617,14 @@
 
             scene.add(characterModel);
 
-            // Shading & Framing
-            applyShadingMode(document.getElementById('sel-shading').value);
+            // Auto-Frame Camera to Native Dimensions
             focusCameraOnModel();
 
             document.getElementById('rig-status-box').innerHTML = `<span style="color:#4ade80;">● Active:</span> <b>${filename}</b> (${Object.keys(bones).length} Bones)`;
             updateToast("Active: " + filename);
         }
 
-        // ACCURATE CAMERA FOCUS (MEASURES REAL MESH VERTICES ONLY)
+        // 6. ACCURATE CAMERA FIT (POSITIONS CAMERA RIGHT IN FRONT OF MODEL)
         function focusCameraOnModel() {
             if (!characterModel) return;
 
@@ -600,12 +646,12 @@
                 const center = box.getCenter(new THREE.Vector3());
                 const size = box.getSize(new THREE.Vector3());
 
-                // Place floor at feet
+                // Place floor directly at feet level
                 floorMesh.position.set(center.x, box.min.y, center.z);
 
                 const maxDim = Math.max(size.x, size.y, size.z);
                 const fov = camera.fov * (Math.PI / 180);
-                const dist = (maxDim / 2) / Math.tan(fov / 2) * 1.35;
+                const dist = (maxDim / 2) / Math.tan(fov / 2) * 1.4;
 
                 camera.position.set(center.x, center.y + size.y * 0.05, center.z + dist);
                 controls.target.copy(center);
@@ -618,43 +664,19 @@
             }
         }
 
-        // SHADING ENGINE PRESERVING NATIVE SKINNED MATERIALS
         function applyShadingMode(mode) {
             if (!characterModel) return;
-
             characterModel.traverse((child) => {
-                if (!child.isMesh) return;
-
-                const updateMat = (m) => {
-                    m.transparent = false;
-                    m.opacity = 1.0;
-                    m.side = THREE.DoubleSide;
-
-                    if (mode === 'clay') {
-                        m.color.setHex(0xd6cbb8);
-                        m.wireframe = false;
-                        if ('flatShading' in m) m.flatShading = false;
-                    } else if (mode === 'planar') {
-                        m.color.setHex(0xd2d2dc);
-                        m.wireframe = false;
-                        if ('flatShading' in m) m.flatShading = true;
-                    } else if (mode === 'ecorche') {
-                        m.color.setHex(0x983232);
-                        m.wireframe = false;
-                        if ('flatShading' in m) m.flatShading = false;
-                    } else if (mode === 'wireframe') {
-                        m.color.setHex(0x6366f1);
-                        m.wireframe = true;
-                    }
-                    m.needsUpdate = true;
-                };
-
-                if (Array.isArray(child.material)) child.material.forEach(updateMat);
-                else if (child.material) updateMat(child.material);
+                if (child.isMesh) {
+                    const isSkinned = Boolean(child.isSkinnedMesh);
+                    const mat = createArtistMaterial(mode, isSkinned);
+                    if (Array.isArray(child.material)) child.material = child.material.map(() => mat.clone());
+                    else child.material = mat;
+                }
             });
         }
 
-        // RELATIVE QUATERNION FORWARD KINEMATICS
+        // 7. FORWARD KINEMATICS POSING
         function resolveBoneName(key) {
             if (bones[key]) return key;
             const lower = key.toLowerCase();
@@ -752,7 +774,7 @@
             loadBoneRotations();
         }
 
-        // PRESET MOVEMENTS
+        // 8. PRESET MOVEMENTS
         function applyPresetPose(pose) {
             resetAllBonesToRestPose();
 
