@@ -9,7 +9,6 @@
         body { background: #0c0c10; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; height: 100vh; width: 100vw; }
         #canvas-container { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; }
         
-        /* Floating Toggle Button */
         #ui-toggle-btn {
             position: absolute; top: 14px; right: 14px; z-index: 50;
             background: rgba(28, 28, 38, 0.9); backdrop-filter: blur(10px);
@@ -18,7 +17,6 @@
             cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
 
-        /* Glassmorphic Panel */
         #ui-panel {
             position: absolute; top: 14px; left: 14px; width: 340px; max-height: 92vh;
             background: rgba(18, 18, 24, 0.88); backdrop-filter: blur(18px);
@@ -37,7 +35,8 @@
         }
 
         h2 { font-size: 14px; font-weight: 700; color: #fff; display: flex; align-items: center; justify-content: space-between; }
-        .status-badge { font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 500; background: #064e3b; color: #6ee7b7; }
+        .status-badge { font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 500; background: #1e1b4b; color: #a5b4fc; }
+        .status-badge.ok { background: #064e3b; color: #6ee7b7; }
 
         .tabs { display: flex; gap: 4px; margin: 10px 0; background: #14141c; padding: 3px; border-radius: 8px; }
         .tab { flex: 1; text-align: center; padding: 6px 0; font-size: 11px; border-radius: 6px; cursor: pointer; color: #8a8a9a; }
@@ -67,13 +66,15 @@
         #status-toast {
             position: absolute; bottom: 15px; right: 15px;
             background: rgba(20, 20, 28, 0.9); border: 1px solid rgba(255,255,255,0.15);
-            padding: 6px 12px; border-radius: 6px; font-size: 11px; color: #94a3b8;
+            padding: 6px 12px; border-radius: 6px; font-size: 11px; color: #cbd5e1;
             z-index: 100; display: block;
         }
     </style>
-    <!-- Stable Three.js Bundle -->
+    <!-- Three.js + Controls + Loaders + JSZip -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/ColladaLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
@@ -85,7 +86,7 @@
     <div id="ui-panel">
         <h2>
             Anatomy Studio 3D
-            <span id="zip-badge" class="status-badge">Engine Active</span>
+            <span id="zip-badge" class="status-badge">Connecting...</span>
         </h2>
 
         <!-- TABS: 1. Model -> 2. Posing -> 3. Lighting -> 4. Data -->
@@ -161,21 +162,7 @@
             <div class="section-title">Fine-tune Dynamic Move (အဆစ်လှည့်ရန်)</div>
             <div class="control-group">
                 <label>Select Joint (လှုပ်မည့်နေရာ):</label>
-                <select id="sel-bone" onchange="loadBoneRotations()">
-                    <option value="head">Head (ဦးခေါင်း)</option>
-                    <option value="neck01">Neck (လည်ပင်း)</option>
-                    <option value="spine03">Chest / Thorax (ရင်အုပ်)</option>
-                    <option value="spine01">Waist (ခါး)</option>
-                    <option value="root">Pelvis / Hips (တင်ပါးဆုံ)</option>
-                    <option value="upperarm01_L">Left Upper Arm (ဘယ်လက်မောင်း)</option>
-                    <option value="lowerarm01_L">Left Forearm (ဘယ်လက်ဖျံ)</option>
-                    <option value="upperarm01_R">Right Upper Arm (ညာလက်မောင်း)</option>
-                    <option value="lowerarm01_R">Right Forearm (ညာလက်ဖျံ)</option>
-                    <option value="upperleg01_L">Left Thigh (ဘယ်ပေါင်)</option>
-                    <option value="lowerleg01_L">Left Knee (ဘယ်ဒူးခေါင်း)</option>
-                    <option value="upperleg01_R">Right Thigh (ညာပေါင်)</option>
-                    <option value="lowerleg01_R">Right Knee (ညာဒူးခေါင်း)</option>
-                </select>
+                <select id="sel-bone" onchange="loadBoneRotations()"></select>
             </div>
             <div class="control-group">
                 <label>Rotate X (ရှေ့/နောက် ကွေး): <span id="val-rx">0°</span></label>
@@ -226,7 +213,7 @@
         <div id="tab-file" class="tab-content">
             <div class="section-title">ZIP Source (.zip)</div>
             <p id="zip-msg" style="font-size: 11px; color: #94a3b8; line-height: 1.4; margin-bottom: 8px;">
-                Repository ထဲရှိ <code>models.zip</code> ကို အလိုအလျောက် စစ်ဆေး ချိတ်ဆက်ပါသည်။
+                မော်ဒယ်များ ပါဝင်သော <code>models.zip</code> ကို အောက်ပါခလုတ်မှ တိုက်ရိုက် ရွေးချယ်နိုင်ပါသည်-
             </p>
             <input type="file" id="zip-input" accept=".zip" onchange="onZipFileUploaded(event)" style="width: 100%;">
         </div>
@@ -253,12 +240,29 @@
             document.getElementById('status-toast').innerText = txt;
         }
 
-        let scene, camera, renderer, controls, floorMesh;
-        let characterModel = null, bones = {}, currentDeltas = {};
-        let keyLight, fillLight, rimLight, ambientLight;
-        let materials = {};
+        const MAJOR_BONES = [
+            { key: 'head', label: 'Head (ဦးခေါင်း)' },
+            { key: 'neck01', label: 'Neck (လည်ပင်း)' },
+            { key: 'spine03', label: 'Chest (ရင်အုပ်)' },
+            { key: 'spine01', label: 'Waist (ခါး)' },
+            { key: 'root', label: 'Pelvis (တင်ပါးဆုံ)' },
+            { key: 'upperarm01_L', label: 'Left Upper Arm (ဘယ်လက်မောင်း)' },
+            { key: 'lowerarm01_L', label: 'Left Forearm (ဘယ်လက်ဖျံ)' },
+            { key: 'upperarm01_R', label: 'Right Upper Arm (ညာလက်မောင်း)' },
+            { key: 'lowerarm01_R', label: 'Right Forearm (ညာလက်ဖျံ)' },
+            { key: 'upperleg01_L', label: 'Left Thigh (ဘယ်ပေါင်)' },
+            { key: 'lowerleg01_L', label: 'Left Knee (ဘယ်ဒူးခေါင်း)' },
+            { key: 'upperleg01_R', label: 'Right Thigh (ညာပေါင်)' },
+            { key: 'lowerleg01_R', label: 'Right Knee (ညာဒူးခေါင်း)' }
+        ];
 
-        // 1. DIRECT THREE.JS STARTUP (INSTANT ZERO-BLOCK ENGINE)
+        let scene, camera, renderer, controls, floorMesh;
+        let characterModel = null, bones = {}, initialRotations = {}, currentDeltas = {};
+        let keyLight, fillLight, rimLight, ambientLight;
+        let loadedZip = null, colladaLoader, gltfLoader;
+        let currentShading = 'clay';
+
+        // 1. ENGINE INITIALIZATION WITH WEBGL 2 (AVOIDS 163-BONE LIMITS)
         function init() {
             const container = document.getElementById('canvas-container');
             scene = new THREE.Scene();
@@ -267,7 +271,9 @@
             camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
             camera.position.set(0, 1.2, 3.8);
 
-            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, context: gl, antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.shadowMap.enabled = true;
@@ -286,26 +292,17 @@
             floorMesh.receiveShadow = true;
             scene.add(floorMesh);
 
+            colladaLoader = new THREE.ColladaLoader();
+            gltfLoader = new THREE.GLTFLoader();
+
             setupLights();
-            setupMaterials();
-
-            // Build Visible Planar Mannequin Immediately
-            buildCompleteAnatomyMannequin();
-
-            // Start in Contrapposto Pose
-            applyPresetPose('contrapposto');
+            populateBoneDropdown();
 
             window.addEventListener('resize', onWindowResize);
             animate();
 
-            updateToast("3D Anatomy Ready");
-        }
-
-        function setupMaterials() {
-            materials.clay = new THREE.MeshLambertMaterial({ color: 0xd6cdbe });
-            materials.planar = new THREE.MeshLambertMaterial({ color: 0xd6d6e2, flatShading: true });
-            materials.ecorche = new THREE.MeshLambertMaterial({ color: 0x933030 });
-            materials.wireframe = new THREE.MeshBasicMaterial({ color: 0x6366f1, wireframe: true });
+            // Check and load models.zip
+            setTimeout(tryAutoLoadZip, 200);
         }
 
         function setupLights() {
@@ -353,108 +350,227 @@
             }
         }
 
-        // 2. COMPLETE PROCEDURAL PLANAR RIGGED MANNEQUIN (ALWAYS RENDERS)
-        function buildCompleteAnatomyMannequin() {
-            if (characterModel) scene.remove(characterModel);
-            bones = {};
-            currentDeltas = {};
+        // 2. ZIP PARSER & REAL MODEL EXTRACTOR
+        async function tryAutoLoadZip() {
+            updateToast("Connecting to models.zip...");
+            const candidates = ['models.zip', './models.zip', 'Models.zip', './Models.zip'];
+            let foundBlob = null;
 
-            const mat = materials.clay;
-            const root = new THREE.Group();
-            root.position.set(0, 0.95, 0);
-
-            // Pelvis
-            const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.16, 0.22), mat);
-            pelvis.castShadow = true;
-            root.add(pelvis);
-            bones['root'] = root;
-
-            // Spine & Torso
-            const spine1 = new THREE.Group();
-            spine1.position.set(0, 0.1, 0);
-            root.add(spine1);
-            bones['spine01'] = spine1;
-
-            const spine3 = new THREE.Group();
-            spine3.position.set(0, 0.2, 0);
-            const chest = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.26, 0.24), mat);
-            chest.position.y = 0.13;
-            chest.castShadow = true;
-            spine3.add(chest);
-            spine1.add(spine3);
-            bones['spine03'] = spine3;
-
-            // Neck & Asaro-style Head
-            const neck = new THREE.Group();
-            neck.position.set(0, 0.28, 0);
-            spine3.add(neck);
-            bones['neck01'] = neck;
-
-            const head = new THREE.Group();
-            head.position.set(0, 0.12, 0);
-            const cranium = new THREE.Mesh(new THREE.DodecahedronGeometry(0.12, 1), mat);
-            cranium.scale.set(1.0, 1.25, 1.05);
-            cranium.castShadow = true;
-            head.add(cranium);
-
-            const jaw = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.12, 5), mat);
-            jaw.rotation.x = Math.PI;
-            jaw.position.set(0, -0.06, 0.04);
-            head.add(jaw);
-            neck.add(head);
-            bones['head'] = head;
-
-            // Limbs Helper
-            function addLimb(parent, name, x, y, len, rad) {
-                const joint = new THREE.Group();
-                joint.position.set(x, y, 0);
-                const mesh = new THREE.Mesh(new THREE.CylinderGeometry(rad*0.8, rad, len, 8), mat);
-                mesh.position.y = -len / 2;
-                mesh.castShadow = true;
-                joint.add(mesh);
-                parent.add(joint);
-                bones[name] = joint;
-                currentDeltas[name] = { x: 0, y: 0, z: 0 };
-                return joint;
+            for (const url of candidates) {
+                try {
+                    const res = await fetch(url);
+                    if (res.ok) { foundBlob = await res.blob(); break; }
+                } catch (e) {}
             }
 
-            // Arms
-            const l_arm = addLimb(spine3, 'upperarm01_L', 0.22, 0.24, 0.28, 0.06);
-            addLimb(l_arm, 'lowerarm01_L', 0, -0.28, 0.26, 0.05);
+            if (foundBlob) {
+                try {
+                    loadedZip = await JSZip.loadAsync(foundBlob);
+                    setZipBadge(true, "models.zip Active");
+                    await onModelConfigChange();
+                } catch (e) {
+                    setZipBadge(false, "ZIP Error");
+                    updateToast("models.zip ဖတ်မရပါ");
+                }
+            } else {
+                setZipBadge(false, "models.zip Not Found");
+                updateToast("Data tab မှ models.zip ကို ရွေးပေးပါ");
+            }
+        }
 
-            const r_arm = addLimb(spine3, 'upperarm01_R', -0.22, 0.24, 0.28, 0.06);
-            addLimb(r_arm, 'lowerarm01_R', 0, -0.28, 0.26, 0.05);
+        async function onZipFileUploaded(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            updateToast("Extracting " + file.name + "...");
+            try {
+                loadedZip = await JSZip.loadAsync(file);
+                setZipBadge(true, file.name);
+                await onModelConfigChange();
+            } catch (err) {
+                alert("ZIP ဖတ်မရပါ: " + err.message);
+            }
+        }
 
-            // Legs
-            const l_leg = addLimb(root, 'upperleg01_L', 0.1, -0.08, 0.44, 0.08);
-            addLimb(l_leg, 'lowerleg01_L', 0, -0.44, 0.42, 0.065);
+        function setZipBadge(ok, text) {
+            const badge = document.getElementById('zip-badge');
+            badge.innerText = text;
+            badge.className = "status-badge " + (ok ? "ok" : "");
+        }
 
-            const r_leg = addLimb(root, 'upperleg01_R', -0.1, -0.08, 0.44, 0.08);
-            addLimb(r_leg, 'lowerleg01_R', 0, -0.44, 0.42, 0.065);
+        function findEntryInZip(zip, ethnic, gender, age) {
+            const terms = [ethnic.toLowerCase(), gender.toLowerCase(), age.toLowerCase()];
+            for (const path in zip.files) {
+                if (zip.files[path].dir || path.includes('__MACOSX') || path.startsWith('.')) continue;
+                const lower = path.toLowerCase();
+                if (lower.endsWith('.dae') || lower.endsWith('.glb')) {
+                    // Match attributes
+                    let match = true;
+                    for (const t of terms) {
+                        if (!lower.includes(t)) {
+                            // Check Caucasia vs Caucasian variant
+                            if (t === 'caucasian' && lower.includes('caucasia')) continue;
+                            match = false; break;
+                        }
+                    }
+                    if (match) return { entry: zip.files[path], name: path.split('/').pop() };
+                }
+            }
+            // Fallback: Return first available 3D file
+            for (const path in zip.files) {
+                if (!zip.files[path].dir && (path.endsWith('.dae') || path.endsWith('.glb'))) {
+                    return { entry: zip.files[path], name: path.split('/').pop() };
+                }
+            }
+            return null;
+        }
 
-            characterModel = root;
-            scene.add(characterModel);
+        async function onModelConfigChange() {
+            if (!loadedZip) return;
+            const ethnic = document.getElementById('sel-ethnic').value;
+            const gender = document.getElementById('sel-gender').value;
+            const age = document.getElementById('sel-age').value;
 
-            ['root','spine01','spine03','neck01','head'].forEach(k => {
-                currentDeltas[k] = { x: 0, y: 0, z: 0 };
+            const res = findEntryInZip(loadedZip, ethnic, gender, age);
+            if (!res) {
+                updateToast("မော်ဒယ်ဖိုင် ရှာမတွေ့ပါ");
+                return;
+            }
+
+            updateToast("Rendering " + res.name + "...");
+
+            if (res.name.toLowerCase().endsWith('.dae')) {
+                const text = await res.entry.async("text");
+                const collada = colladaLoader.parse(text, '');
+                loadRealHumanModel(collada.scene);
+            } else {
+                const arrayBuffer = await res.entry.async("arraybuffer");
+                gltfLoader.parse(arrayBuffer, '', (gltf) => {
+                    loadRealHumanModel(gltf.scene);
+                });
+            }
+        }
+
+        // 3. LOAD REAL HUMAN MODEL INTO SCENE
+        function loadRealHumanModel(model) {
+            if (characterModel) scene.remove(characterModel);
+            characterModel = model;
+            bones = {};
+            initialRotations = {};
+            currentDeltas = {};
+
+            // Collect Bones and Enable Updates
+            characterModel.traverse((child) => {
+                child.visible = true;
+                child.matrixAutoUpdate = true;
+                if (child.isMesh) {
+                    child.frustumCulled = false;
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+
+                    if (child.isSkinnedMesh && child.skeleton && child.skeleton.bones) {
+                        child.skeleton.bones.forEach(b => {
+                            if (b && b.name) {
+                                b.matrixAutoUpdate = true;
+                                bones[b.name] = b;
+                            }
+                        });
+                    }
+                }
+                if (child.isBone || child.type === 'Bone') {
+                    if (child.name) {
+                        child.matrixAutoUpdate = true;
+                        bones[child.name] = child;
+                    }
+                }
             });
 
+            // Cache Initial Rotations
+            Object.keys(bones).forEach(bName => {
+                const b = bones[bName];
+                initialRotations[bName] = { x: b.rotation.x, y: b.rotation.y, z: b.rotation.z };
+                currentDeltas[bName] = { x: 0, y: 0, z: 0 };
+            });
+
+            scene.add(characterModel);
+
+            // Auto-scale to standard 1.75m height
+            characterModel.updateMatrixWorld(true);
+            const box = new THREE.Box3().setFromObject(characterModel);
+            const size = box.getSize(new THREE.Vector3());
+
+            if (size.y > 0) {
+                const targetHeight = 1.75;
+                const scale = targetHeight / size.y;
+                characterModel.scale.set(scale, scale, scale);
+                characterModel.updateMatrixWorld(true);
+            }
+
+            // Center model so feet rest on floor at y = 0
+            const newBox = new THREE.Box3().setFromObject(characterModel);
+            const center = newBox.getCenter(new THREE.Vector3());
+            characterModel.position.set(-center.x, -newBox.min.y, -center.z);
+            characterModel.updateMatrixWorld(true);
+
+            // Apply Clay Shading and Contrapposto Pose
+            applyShadingMode(document.getElementById('sel-shading').value);
+            applyPresetPose('contrapposto');
+            resetCameraToCenter();
+
+            document.getElementById('rig-status-box').innerHTML = `<span style="color:#4ade80;">● Real Model Active:</span> <b>${Object.keys(bones).length}</b> Bones Ready!`;
+            updateToast("Model Loaded Successfully");
+        }
+
+        // 4. SHADING ENGINE (PLASTER CLAY, PLANAR, ECORCHE)
+        function createArtistMaterial(mode, isSkinned) {
+            const params = { skinning: isSkinned, side: THREE.DoubleSide };
+            if (mode === 'clay') return new THREE.MeshLambertMaterial({ ...params, color: 0xd8cebf });
+            if (mode === 'planar') return new THREE.MeshLambertMaterial({ ...params, color: 0xd6d6e2, flatShading: true });
+            if (mode === 'ecorche') return new THREE.MeshLambertMaterial({ ...params, color: 0x933030 });
+            if (mode === 'wireframe') return new THREE.MeshBasicMaterial({ ...params, color: 0x6366f1, wireframe: true });
+            return null;
+        }
+
+        function applyShadingMode(mode) {
+            if (!characterModel) return;
+            characterModel.traverse((child) => {
+                if (child.isMesh) {
+                    const isSkinned = Boolean(child.isSkinnedMesh);
+                    const mat = createArtistMaterial(mode, isSkinned);
+                    if (Array.isArray(child.material)) child.material = child.material.map(() => mat.clone());
+                    else child.material = mat;
+                }
+            });
+        }
+
+        function resetCameraToCenter() {
+            camera.position.set(0, 1.2, 3.8);
+            controls.target.set(0, 0.9, 0);
+            controls.update();
+        }
+
+        // 5. POSING & FORWARD KINEMATICS
+        function resolveBoneName(key) {
+            if (bones[key]) return key;
+            const lower = key.toLowerCase();
+            return Object.keys(bones).find(b => b.toLowerCase() === lower || b.toLowerCase().includes(lower));
+        }
+
+        function populateBoneDropdown() {
+            const select = document.getElementById('sel-bone');
+            select.innerHTML = '';
+            MAJOR_BONES.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.key;
+                opt.innerText = item.label;
+                select.appendChild(opt);
+            });
             loadBoneRotations();
         }
 
-        // 3. MOVEMENTS & POSING LOGIC
-        function setJointAngle(name, dx, dy, dz) {
-            const b = bones[name];
-            if (!b) return;
-            currentDeltas[name] = { x: dx, y: dy, z: dz };
-            b.rotation.x = THREE.MathUtils.degToRad(dx);
-            b.rotation.y = THREE.MathUtils.degToRad(dy);
-            b.rotation.z = THREE.MathUtils.degToRad(dz);
-        }
-
         function loadBoneRotations() {
-            const name = document.getElementById('sel-bone').value;
-            const delta = currentDeltas[name] || { x: 0, y: 0, z: 0 };
+            const key = document.getElementById('sel-bone').value;
+            const actualName = resolveBoneName(key);
+            const delta = (actualName && currentDeltas[actualName]) ? currentDeltas[actualName] : { x: 0, y: 0, z: 0 };
             document.getElementById('rot-x').value = delta.x;
             document.getElementById('rot-y').value = delta.y;
             document.getElementById('rot-z').value = delta.z;
@@ -464,122 +580,121 @@
         }
 
         function updateBoneRotation() {
-            const name = document.getElementById('sel-bone').value;
+            const key = document.getElementById('sel-bone').value;
+            const actualName = resolveBoneName(key);
+            if (!actualName || !bones[actualName]) return;
+
             const dx = parseFloat(document.getElementById('rot-x').value);
             const dy = parseFloat(document.getElementById('rot-y').value);
             const dz = parseFloat(document.getElementById('rot-z').value);
-            setJointAngle(name, dx, dy, dz);
+
+            applyRotationToBone(actualName, dx, dy, dz);
+
             document.getElementById('val-rx').innerText = dx + '°';
             document.getElementById('val-ry').innerText = dy + '°';
             document.getElementById('val-rz').innerText = dz + '°';
         }
 
+        function applyRotationToBone(boneName, dx, dy, dz) {
+            const b = bones[boneName];
+            const init = initialRotations[boneName];
+            if (!b || !init) return;
+
+            currentDeltas[boneName] = { x: dx, y: dy, z: dz };
+
+            b.rotation.x = init.x + THREE.MathUtils.degToRad(dx);
+            b.rotation.y = init.y + THREE.MathUtils.degToRad(dy);
+            b.rotation.z = init.z + THREE.MathUtils.degToRad(dz);
+
+            b.updateMatrix();
+            b.updateMatrixWorld(true);
+
+            characterModel.traverse((child) => {
+                if (child.isSkinnedMesh && child.skeleton) {
+                    child.skeleton.update();
+                }
+            });
+        }
+
         function resetCurrentBone() {
-            const name = document.getElementById('sel-bone').value;
+            const key = document.getElementById('sel-bone').value;
+            const actualName = resolveBoneName(key);
             document.getElementById('rot-x').value = 0;
             document.getElementById('rot-y').value = 0;
             document.getElementById('rot-z').value = 0;
-            setJointAngle(name, 0, 0, 0);
+            if (actualName) applyRotationToBone(actualName, 0, 0, 0);
             loadBoneRotations();
         }
 
         function resetAllBonesToRestPose() {
-            Object.keys(bones).forEach(k => setJointAngle(k, 0, 0, 0));
-            bones['root'].position.set(0, 0.95, 0);
+            Object.keys(bones).forEach(bName => {
+                const b = bones[bName];
+                const init = initialRotations[bName];
+                if (b && init) {
+                    b.rotation.set(init.x, init.y, init.z);
+                    b.updateMatrix();
+                    b.updateMatrixWorld(true);
+                    currentDeltas[bName] = { x: 0, y: 0, z: 0 };
+                }
+            });
+            if (characterModel) {
+                characterModel.traverse((child) => {
+                    if (child.isSkinnedMesh && child.skeleton) child.skeleton.update();
+                });
+            }
             loadBoneRotations();
         }
 
+        // PRESET MOVEMENTS
         function applyPresetPose(pose) {
             resetAllBonesToRestPose();
 
+            const applyDelta = (key, dx, dy, dz) => {
+                const name = resolveBoneName(key);
+                if (name) applyRotationToBone(name, dx, dy, dz);
+            };
+
             if (pose === 'contrapposto') {
-                // Classical Artist Pose
-                setJointAngle('root', 0, 0, 5);
-                setJointAngle('spine01', -2, 4, -6);
-                setJointAngle('spine03', 2, -3, 3);
-                setJointAngle('head', 4, -12, 4);
-                setJointAngle('upperleg01_R', -4, 0, 2);
-                setJointAngle('upperleg01_L', 14, -6, -6);
-                setJointAngle('lowerleg01_L', -20, 0, 0);
-                setJointAngle('upperarm01_R', 10, 0, 12);
-                setJointAngle('lowerarm01_R', 0, 0, 25);
-                setJointAngle('upperarm01_L', 6, 0, -8);
+                applyDelta('root', 0, 0, 4);
+                applyDelta('spine01', -2, 3, -5);
+                applyDelta('spine03', 2, -2, 2);
+                applyDelta('head', 3, -10, 3);
+                applyDelta('upperleg01_R', -3, 0, 2);
+                applyDelta('upperleg01_L', 14, -5, -5);
+                applyDelta('lowerleg01_L', -18, 0, 0);
+                applyDelta('upperarm01_R', 10, 0, 10);
+                applyDelta('lowerarm01_R', 0, 0, 20);
+                applyDelta('upperarm01_L', 5, 0, -8);
             } else if (pose === 'sitting') {
-                bones['root'].position.y = 0.55;
-                setJointAngle('upperleg01_L', -80, 5, 0);
-                setJointAngle('upperleg01_R', -80, -5, 0);
-                setJointAngle('lowerleg01_L', 85, 0, 0);
-                setJointAngle('lowerleg01_R', 85, 0, 0);
-                setJointAngle('spine01', 6, 0, 0);
-                setJointAngle('lowerarm01_L', -25, 0, 0);
-                setJointAngle('lowerarm01_R', -25, 0, 0);
+                applyDelta('upperleg01_L', -75, 4, 0);
+                applyDelta('upperleg01_R', -75, -4, 0);
+                applyDelta('lowerleg01_L', 80, 0, 0);
+                applyDelta('lowerleg01_R', 80, 0, 0);
+                applyDelta('spine01', 5, 0, 0);
+                applyDelta('lowerarm01_L', -20, 0, 0);
+                applyDelta('lowerarm01_R', -20, 0, 0);
             } else if (pose === 'walking') {
-                setJointAngle('upperleg01_R', -30, 4, 0);
-                setJointAngle('lowerleg01_R', 35, 0, 0);
-                setJointAngle('upperleg01_L', 20, -4, 0);
-                setJointAngle('lowerleg01_L', -12, 0, 0);
-                setJointAngle('upperarm01_L', -30, 8, 12);
-                setJointAngle('lowerarm01_L', -20, 0, 0);
-                setJointAngle('upperarm01_R', 25, -4, -12);
-                setJointAngle('spine01', 3, -12, 0);
-                setJointAngle('head', -2, 8, 0);
+                applyDelta('upperleg01_R', -25, 3, 0);
+                applyDelta('lowerleg01_R', 30, 0, 0);
+                applyDelta('upperleg01_L', 18, -3, 0);
+                applyDelta('lowerleg01_L', -10, 0, 0);
+                applyDelta('upperarm01_L', -25, 6, 10);
+                applyDelta('lowerarm01_L', -15, 0, 0);
+                applyDelta('upperarm01_R', 20, -3, -10);
+                applyDelta('spine01', 2, -10, 0);
             } else if (pose === 'folded_arms') {
-                setJointAngle('upperarm01_L', 18, 30, 18);
-                setJointAngle('lowerarm01_L', -70, 18, 25);
-                setJointAngle('upperarm01_R', 18, -30, -18);
-                setJointAngle('lowerarm01_R', -70, -18, -25);
-                setJointAngle('head', 4, 0, 0);
+                applyDelta('upperarm01_L', 15, 25, 15);
+                applyDelta('lowerarm01_L', -65, 15, 20);
+                applyDelta('upperarm01_R', 15, -25, -15);
+                applyDelta('lowerarm01_R', -65, -15, -20);
             } else if (pose === 'thinker') {
-                setJointAngle('spine01', 15, -8, 0);
-                setJointAngle('head', -12, 16, -4);
-                setJointAngle('upperarm01_R', -40, 8, 20);
-                setJointAngle('lowerarm01_R', -85, 25, 0);
+                applyDelta('spine01', 12, -6, 0);
+                applyDelta('head', -10, 14, -3);
+                applyDelta('upperarm01_R', -35, 6, 18);
+                applyDelta('lowerarm01_R', -80, 20, 0);
             }
 
             loadBoneRotations();
-        }
-
-        // 4. SHADING & VIEW MODES
-        function applyShadingMode(mode) {
-            const targetMat = materials[mode] || materials.clay;
-            characterModel.traverse((child) => {
-                if (child.isMesh) child.material = targetMat;
-            });
-        }
-
-        function onModelConfigChange() {
-            const age = document.getElementById('sel-age').value;
-            if (!bones['head']) return;
-
-            if (age === 'toddler') {
-                bones['head'].scale.set(1.4, 1.4, 1.4);
-                bones['upperleg01_L'].scale.set(1, 0.65, 1);
-                bones['upperleg01_R'].scale.set(1, 0.65, 1);
-            } else if (age === 'child') {
-                bones['head'].scale.set(1.2, 1.2, 1.2);
-                bones['upperleg01_L'].scale.set(1, 0.8, 1);
-                bones['upperleg01_R'].scale.set(1, 0.8, 1);
-            } else if (age === 'elderly') {
-                bones['head'].scale.set(1, 1, 1);
-                setJointAngle('spine01', 14, 0, 0);
-                setJointAngle('head', -10, 0, 0);
-            } else {
-                bones['head'].scale.set(1, 1, 1);
-                bones['upperleg01_L'].scale.set(1, 1, 1);
-                bones['upperleg01_R'].scale.set(1, 1, 1);
-            }
-        }
-
-        function resetCameraToCenter() {
-            camera.position.set(0, 1.2, 3.8);
-            controls.target.set(0, 0.9, 0);
-            controls.update();
-        }
-
-        function onZipFileUploaded(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            updateToast("Zip Uploaded: " + file.name);
         }
 
         function onWindowResize() {
