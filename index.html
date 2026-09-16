@@ -70,7 +70,7 @@
             z-index: 100; display: block;
         }
     </style>
-    <!-- Three.js + Controls + Loaders + JSZip -->
+    <!-- Essential Loaders (Accurate Standalone Dependencies) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/ColladaLoader.js"></script>
@@ -143,7 +143,7 @@
 
         <!-- TAB 2: POSING & MOVEMENTS -->
         <div id="tab-pose" class="tab-content">
-            <div id="rig-status-box">● Rig Active: Ready for Posing</div>
+            <div id="rig-status-box">● Model Active</div>
 
             <!-- Movement Presets -->
             <div class="section-title">Everyday Movement Presets (ကိုယ်ဟန်များ)</div>
@@ -211,11 +211,12 @@
 
         <!-- TAB 4: DATA -->
         <div id="tab-file" class="tab-content">
-            <div class="section-title">ZIP Source (.zip)</div>
+            <div class="section-title">ZIP / Direct File Upload</div>
             <p id="zip-msg" style="font-size: 11px; color: #94a3b8; line-height: 1.4; margin-bottom: 8px;">
-                မော်ဒယ်များ ပါဝင်သော <code>models.zip</code> ကို အောက်ပါခလုတ်မှ တိုက်ရိုက် ရွေးချယ်နိုင်ပါသည်-
+                <code>models.zip</code> သို့မဟုတ် သီးသန့် <code>.dae</code> / <code>.glb</code> ဖိုင်ကို အောက်ပါခလုတ်မှ တင်နိုင်ပါသည်-
             </p>
-            <input type="file" id="zip-input" accept=".zip" onchange="onZipFileUploaded(event)" style="width: 100%;">
+            <input type="file" id="zip-input" accept=".zip,.dae,.glb,.gltf" onchange="onFileUpload(event)" style="width: 100%;">
+            <div id="zip-file-list" style="margin-top: 10px; font-size: 10px; color: #64748b; max-height: 120px; overflow-y: auto;"></div>
         </div>
     </div>
 
@@ -260,9 +261,7 @@
         let characterModel = null, bones = {}, initialRotations = {}, currentDeltas = {};
         let keyLight, fillLight, rimLight, ambientLight;
         let loadedZip = null, colladaLoader, gltfLoader;
-        let currentShading = 'clay';
 
-        // 1. ENGINE INITIALIZATION WITH WEBGL 2 (AVOIDS 163-BONE LIMITS)
         function init() {
             const container = document.getElementById('canvas-container');
             scene = new THREE.Scene();
@@ -301,7 +300,6 @@
             window.addEventListener('resize', onWindowResize);
             animate();
 
-            // Check and load models.zip
             setTimeout(tryAutoLoadZip, 200);
         }
 
@@ -350,7 +348,7 @@
             }
         }
 
-        // 2. ZIP PARSER & REAL MODEL EXTRACTOR
+        // AUTO-LOAD MODELS.ZIP
         async function tryAutoLoadZip() {
             updateToast("Connecting to models.zip...");
             const candidates = ['models.zip', './models.zip', 'Models.zip', './Models.zip'];
@@ -367,6 +365,7 @@
                 try {
                     loadedZip = await JSZip.loadAsync(foundBlob);
                     setZipBadge(true, "models.zip Active");
+                    displayZipContents();
                     await onModelConfigChange();
                 } catch (e) {
                     setZipBadge(false, "ZIP Error");
@@ -378,16 +377,32 @@
             }
         }
 
-        async function onZipFileUploaded(e) {
+        // UPLOAD ZIP OR DIRECT .DAE / .GLB
+        async function onFileUpload(e) {
             const file = e.target.files[0];
             if (!file) return;
-            updateToast("Extracting " + file.name + "...");
-            try {
-                loadedZip = await JSZip.loadAsync(file);
-                setZipBadge(true, file.name);
-                await onModelConfigChange();
-            } catch (err) {
-                alert("ZIP ဖတ်မရပါ: " + err.message);
+
+            const name = file.name.toLowerCase();
+            if (name.endsWith('.zip')) {
+                updateToast("Extracting " + file.name + "...");
+                try {
+                    loadedZip = await JSZip.loadAsync(file);
+                    setZipBadge(true, file.name);
+                    displayZipContents();
+                    await onModelConfigChange();
+                } catch (err) {
+                    alert("ZIP ဖတ်မရပါ: " + err.message);
+                }
+            } else if (name.endsWith('.dae')) {
+                updateToast("Rendering " + file.name + "...");
+                const text = await file.text();
+                parseAndLoadDae(text, file.name);
+            } else if (name.endsWith('.glb') || name.endsWith('.gltf')) {
+                updateToast("Rendering " + file.name + "...");
+                const buffer = await file.arrayBuffer();
+                gltfLoader.parse(buffer, '', (gltf) => {
+                    loadRealHumanModel(gltf.scene, file.name);
+                });
             }
         }
 
@@ -397,27 +412,40 @@
             badge.className = "status-badge " + (ok ? "ok" : "");
         }
 
+        function displayZipContents() {
+            if (!loadedZip) return;
+            const container = document.getElementById('zip-file-list');
+            const files = Object.keys(loadedZip.files).filter(k => !loadedZip.files[k].dir && !k.includes('__MACOSX'));
+            container.innerHTML = `<b>Zip Files (${files.length}):</b><br>` + files.map(f => f.split('/').pop()).join(', ');
+        }
+
+        // ACCURATE MATCHER (HANDLES FEMALE VS MALE & CAUCASIAN VARIANTS)
         function findEntryInZip(zip, ethnic, gender, age) {
-            const terms = [ethnic.toLowerCase(), gender.toLowerCase(), age.toLowerCase()];
+            const e = ethnic.toLowerCase();
+            const g = gender.toLowerCase();
+            const a = age.toLowerCase();
+
             for (const path in zip.files) {
                 if (zip.files[path].dir || path.includes('__MACOSX') || path.startsWith('.')) continue;
                 const lower = path.toLowerCase();
                 if (lower.endsWith('.dae') || lower.endsWith('.glb')) {
-                    // Match attributes
-                    let match = true;
-                    for (const t of terms) {
-                        if (!lower.includes(t)) {
-                            // Check Caucasia vs Caucasian variant
-                            if (t === 'caucasian' && lower.includes('caucasia')) continue;
-                            match = false; break;
-                        }
+                    // Match Ethnicity
+                    let eMatch = lower.includes(e) || (e === 'caucasian' && lower.includes('caucasia'));
+                    // Match Gender (Strict: ensure female does not match male)
+                    let gMatch = false;
+                    if (g === 'female') gMatch = lower.includes('female');
+                    else if (g === 'male') gMatch = lower.includes('male') && !lower.includes('female');
+                    // Match Age
+                    let aMatch = lower.includes(a);
+
+                    if (eMatch && gMatch && aMatch) {
+                        return { entry: zip.files[path], name: path.split('/').pop() };
                     }
-                    if (match) return { entry: zip.files[path], name: path.split('/').pop() };
                 }
             }
-            // Fallback: Return first available 3D file
+            // Fallback: return any 3D model in zip
             for (const path in zip.files) {
-                if (!zip.files[path].dir && (path.endsWith('.dae') || path.endsWith('.glb'))) {
+                if (!zip.files[path].dir && !path.includes('__MACOSX') && (path.endsWith('.dae') || path.endsWith('.glb'))) {
                     return { entry: zip.files[path], name: path.split('/').pop() };
                 }
             }
@@ -440,25 +468,39 @@
 
             if (res.name.toLowerCase().endsWith('.dae')) {
                 const text = await res.entry.async("text");
-                const collada = colladaLoader.parse(text, '');
-                loadRealHumanModel(collada.scene);
+                parseAndLoadDae(text, res.name);
             } else {
                 const arrayBuffer = await res.entry.async("arraybuffer");
                 gltfLoader.parse(arrayBuffer, '', (gltf) => {
-                    loadRealHumanModel(gltf.scene);
+                    loadRealHumanModel(gltf.scene, res.name);
                 });
             }
         }
 
-        // 3. LOAD REAL HUMAN MODEL INTO SCENE
-        function loadRealHumanModel(model) {
+        // SANITIZE DAE & PARSE SAFELY (NO 404 TEXTURE ERRORS)
+        function parseAndLoadDae(daeText, filename) {
+            try {
+                // Strip external image tags so Three.js doesn't try to fetch missing PNGs
+                let cleanText = daeText.replace(/<library_images[\s\S]*?<\/library_images>/gi, '<library_images></library_images>');
+                cleanText = cleanText.replace(/<texture\b[^>]*\/>/gi, '');
+                cleanText = cleanText.replace(/<texture\b[\s\S]*?<\/texture>/gi, '');
+
+                const collada = colladaLoader.parse(cleanText, '');
+                loadRealHumanModel(collada.scene, filename);
+            } catch (err) {
+                alert("DAE Parse Error: " + err.message);
+                updateToast("DAE Error: " + err.message);
+            }
+        }
+
+        // LOAD HUMAN MODEL INTO THREE.JS SCENE
+        function loadRealHumanModel(model, filename) {
             if (characterModel) scene.remove(characterModel);
             characterModel = model;
             bones = {};
             initialRotations = {};
             currentDeltas = {};
 
-            // Collect Bones and Enable Updates
             characterModel.traverse((child) => {
                 child.visible = true;
                 child.matrixAutoUpdate = true;
@@ -484,16 +526,19 @@
                 }
             });
 
-            // Cache Initial Rotations
+            // Cache Initial Bone Rotations (Rest Pose)
             Object.keys(bones).forEach(bName => {
                 const b = bones[bName];
+                b.updateMatrix();
+                b.updateMatrixWorld(true);
+                if (!b.userData.restQuat) b.userData.restQuat = b.quaternion.clone();
                 initialRotations[bName] = { x: b.rotation.x, y: b.rotation.y, z: b.rotation.z };
                 currentDeltas[bName] = { x: 0, y: 0, z: 0 };
             });
 
             scene.add(characterModel);
 
-            // Auto-scale to standard 1.75m height
+            // Normalize Scale to Human Size (1.75m)
             characterModel.updateMatrixWorld(true);
             const box = new THREE.Box3().setFromObject(characterModel);
             const size = box.getSize(new THREE.Vector3());
@@ -505,22 +550,22 @@
                 characterModel.updateMatrixWorld(true);
             }
 
-            // Center model so feet rest on floor at y = 0
+            // Align Feet Flat on Ground at y = 0
             const newBox = new THREE.Box3().setFromObject(characterModel);
             const center = newBox.getCenter(new THREE.Vector3());
             characterModel.position.set(-center.x, -newBox.min.y, -center.z);
             characterModel.updateMatrixWorld(true);
 
-            // Apply Clay Shading and Contrapposto Pose
+            // Apply Artist Shading and Default Contrapposto Pose
             applyShadingMode(document.getElementById('sel-shading').value);
             applyPresetPose('contrapposto');
             resetCameraToCenter();
 
-            document.getElementById('rig-status-box').innerHTML = `<span style="color:#4ade80;">● Real Model Active:</span> <b>${Object.keys(bones).length}</b> Bones Ready!`;
-            updateToast("Model Loaded Successfully");
+            document.getElementById('rig-status-box').innerHTML = `<span style="color:#4ade80;">● Active:</span> <b>${filename || 'Human Model'}</b> (${Object.keys(bones).length} Bones)`;
+            updateToast("Active: " + (filename || 'Human Model'));
         }
 
-        // 4. SHADING ENGINE (PLASTER CLAY, PLANAR, ECORCHE)
+        // PLASTER CLAY & PLANAR SHADING ENGINE
         function createArtistMaterial(mode, isSkinned) {
             const params = { skinning: isSkinned, side: THREE.DoubleSide };
             if (mode === 'clay') return new THREE.MeshLambertMaterial({ ...params, color: 0xd8cebf });
@@ -548,11 +593,11 @@
             controls.update();
         }
 
-        // 5. POSING & FORWARD KINEMATICS
+        // POSING ENGINE (PRESETS & FK SLIDERS)
         function resolveBoneName(key) {
             if (bones[key]) return key;
             const lower = key.toLowerCase();
-            return Object.keys(bones).find(b => b.toLowerCase() === lower || b.toLowerCase().includes(lower));
+            return Object.keys(bones).find(b => b.toLowerCase() === lower || b.toLowerCase().endsWith('_' + lower) || b.toLowerCase().endsWith(lower));
         }
 
         function populateBoneDropdown() {
@@ -597,15 +642,19 @@
 
         function applyRotationToBone(boneName, dx, dy, dz) {
             const b = bones[boneName];
-            const init = initialRotations[boneName];
-            if (!b || !init) return;
+            if (!b || !b.userData.restQuat) return;
 
             currentDeltas[boneName] = { x: dx, y: dy, z: dz };
 
-            b.rotation.x = init.x + THREE.MathUtils.degToRad(dx);
-            b.rotation.y = init.y + THREE.MathUtils.degToRad(dy);
-            b.rotation.z = init.z + THREE.MathUtils.degToRad(dz);
+            const deltaEuler = new THREE.Euler(
+                THREE.MathUtils.degToRad(dx),
+                THREE.MathUtils.degToRad(dy),
+                THREE.MathUtils.degToRad(dz),
+                'XYZ'
+            );
+            const deltaQuat = new THREE.Quaternion().setFromEuler(deltaEuler);
 
+            b.quaternion.copy(b.userData.restQuat).multiply(deltaQuat);
             b.updateMatrix();
             b.updateMatrixWorld(true);
 
@@ -629,9 +678,8 @@
         function resetAllBonesToRestPose() {
             Object.keys(bones).forEach(bName => {
                 const b = bones[bName];
-                const init = initialRotations[bName];
-                if (b && init) {
-                    b.rotation.set(init.x, init.y, init.z);
+                if (b && b.userData.restQuat) {
+                    b.quaternion.copy(b.userData.restQuat);
                     b.updateMatrix();
                     b.updateMatrixWorld(true);
                     currentDeltas[bName] = { x: 0, y: 0, z: 0 };
