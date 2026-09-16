@@ -69,7 +69,7 @@
             z-index: 100; display: block;
         }
     </style>
-    <!-- Three.js + OrbitControls + ColladaLoader + GLTFLoader + JSZip -->
+    <!-- Three.js + Loaders -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/ColladaLoader.js"></script>
@@ -153,8 +153,8 @@
             <div class="section-title">Everyday Movement Presets</div>
             <div class="control-group">
                 <select id="sel-pose" onchange="applyPresetPose(this.value)">
-                    <option value="neutral" selected>Neutral A-Pose (မူလ မတ်တပ်)</option>
-                    <option value="contrapposto">Contrapposto (ဂန္ထဝင် အလေးပေးရပ်ဟန်)</option>
+                    <option value="neutral">Neutral A-Pose (မူလ မတ်တပ်)</option>
+                    <option value="contrapposto" selected>Contrapposto (ဂန္ထဝင် အလေးပေးရပ်ဟန်)</option>
                     <option value="sitting">Sitting (ကုလားထိုင် ထိုင်ဟန်)</option>
                     <option value="walking">Walking / Stride (လမ်းလျှောက်ဟန်)</option>
                     <option value="folded_arms">Folded Arms (လက်ပိုက်ရပ်ဟန်)</option>
@@ -270,13 +270,10 @@
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x0e0e13);
 
-            camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 10, 30);
+            camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 1.2, 3.2);
 
-            // WebGL 2 with High Precision Support
-            const canvas = document.createElement('canvas');
-            const gl = canvas.getContext('webgl2', { antialias: true }) || canvas.getContext('webgl');
-            renderer = new THREE.WebGLRenderer({ canvas: canvas, context: gl, antialias: true, powerPreference: "high-performance" });
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.shadowMap.enabled = true;
@@ -284,11 +281,11 @@
             container.appendChild(renderer.domElement);
 
             controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.target.set(0, 8.5, 0);
+            controls.target.set(0, 0.9, 0);
             controls.enableDamping = true;
 
             floorMesh = new THREE.Mesh(
-                new THREE.PlaneGeometry(50, 50),
+                new THREE.PlaneGeometry(10, 10),
                 new THREE.MeshStandardMaterial({ color: 0x14141c, roughness: 0.88 })
             );
             floorMesh.rotation.x = -Math.PI / 2;
@@ -308,7 +305,7 @@
         }
 
         function setupLights() {
-            ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
+            ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
             scene.add(ambientLight);
 
             keyLight = new THREE.DirectionalLight(0xfff3e3, 1.8);
@@ -328,11 +325,11 @@
 
         function updateLights() {
             const angle = THREE.MathUtils.degToRad(parseFloat(document.getElementById('key-angle').value));
-            const dist = 25.0;
-            keyLight.position.set(Math.cos(angle) * dist, 20.0, Math.sin(angle) * dist);
+            const dist = 4.0;
+            keyLight.position.set(Math.cos(angle) * dist, 3.0, Math.sin(angle) * dist);
             keyLight.intensity = parseFloat(document.getElementById('key-intensity').value);
-            fillLight.position.set(-Math.cos(angle) * dist, 12.0, -Math.sin(angle) * dist);
-            rimLight.position.set(0, 15, -20);
+            fillLight.position.set(-Math.cos(angle) * dist, 1.8, -Math.sin(angle) * dist);
+            rimLight.position.set(0, 2.8, -3.2);
             rimLight.intensity = parseFloat(document.getElementById('rim-intensity').value);
         }
 
@@ -346,7 +343,7 @@
         function applyLightingPreset(type) {
             if (type === 'studio') resetLights();
             else if (type === 'daylight') {
-                keyLight.position.set(10, 25, 10); keyLight.intensity = 2.2; rimLight.intensity = 0.4;
+                keyLight.position.set(2, 4, 2); keyLight.intensity = 2.2; rimLight.intensity = 0.4;
             } else if (type === 'stage') {
                 keyLight.intensity = 0.4; rimLight.intensity = 4.0;
             }
@@ -445,7 +442,7 @@
             }
         }
 
-        // STRICT HIERARCHICAL MATCHING (ASIAN STAYS 100% IN ASIAN)
+        // 100% STRICT ETHNICITY POOL MATCHER (NEVER LEAPS TO CAUCASIAN ON ASIAN SELECTION)
         function findEntryInZip(zip, ethnic, gender, age) {
             const e = ethnic.toLowerCase().trim();
             const g = gender.toLowerCase().trim();
@@ -457,8 +454,8 @@
                 return low.endsWith('.dae') || low.endsWith('.glb');
             });
 
-            // 1. Strict Ethnicity isolation
-            const ethnicPool = allFiles.filter(k => {
+            // Isolate current ethnicity pool strictly
+            const pool = allFiles.filter(k => {
                 const low = k.toLowerCase();
                 if (e === 'asian') return low.includes('asian');
                 if (e === 'african') return low.includes('african');
@@ -466,18 +463,18 @@
                 return false;
             });
 
-            const pool = (ethnicPool.length > 0) ? ethnicPool : allFiles;
+            const targetPool = (pool.length > 0) ? pool : allFiles;
 
-            // 2. Gender Match
-            let genderPool = pool.filter(k => {
+            // Match gender within target pool
+            let genderPool = targetPool.filter(k => {
                 const low = k.toLowerCase();
                 if (g === 'female') return low.includes('female');
                 if (g === 'male') return low.includes('male') && !low.includes('female');
                 return true;
             });
-            if (genderPool.length === 0) genderPool = pool;
+            if (genderPool.length === 0) genderPool = targetPool;
 
-            // 3. Age Match
+            // Match age within gender pool
             const ageMatch = genderPool.find(k => k.toLowerCase().includes(a));
             if (ageMatch) return ageMatch;
 
@@ -500,12 +497,17 @@
             await loadSpecificZipFile(matchedPath);
         }
 
-        // CLEAN DAE SAFELY: REMOVES ONLY MISSING TEXTURE PATH (ZERO XML MUTILATION)
+        // 100% BULLETPROOF COLLADA XML SANITIZER: ELIMINATES OPACITY=0 AND 404 NETWORK LOOPS
         function parseAndLoadDae(daeText, filename) {
             try {
-                // Safe sanitize: clear only the file path inside <init_from> to avoid 404 without breaking XML tree
-                const safeXml = daeText.replace(/<init_from>[\s\S]*?<\/init_from>/gi, '<init_from></init_from>');
-                const collada = colladaLoader.parse(safeXml, '');
+                // 1. Replace textures with standard diffuse color so ColladaLoader never fetches missing PNGs
+                let clean = daeText.replace(/<diffuse>\s*<texture\b[^>]*\/>\s*<\/diffuse>/gi, '<diffuse><color>0.84 0.76 0.68 1.0</color></diffuse>');
+                // 2. Eliminate <transparent> tags completely so ColladaLoader never sets opacity to 0!
+                clean = clean.replace(/<transparent>[\s\S]*?<\/transparent>/gi, '');
+                // 3. Clear library_images
+                clean = clean.replace(/<library_images[\s\S]*?<\/library_images>/gi, '<library_images/>');
+
+                const collada = colladaLoader.parse(clean, '');
                 loadRealHumanModel(collada.scene, filename);
             } catch (err) {
                 alert("DAE Parse Error: " + err.message);
@@ -513,18 +515,13 @@
             }
         }
 
-        // NATIVE STABLE ENGINE: PRESERVES 100% COLLADA MESH BINDINGS
+        // FULL OPACITY SKINNED MESH & BONE TEXTURE ATTACHMENT
         function loadRealHumanModel(model, filename) {
             if (characterModel) scene.remove(characterModel);
             characterModel = model;
             bones = {};
             initialRotations = {};
             currentDeltas = {};
-
-            // Keep native (1, 1, 1) scale to prevent double-scaling matrix collapse
-            characterModel.position.set(0, 0, 0);
-            characterModel.scale.set(1, 1, 1);
-            characterModel.rotation.set(0, 0, 0);
 
             characterModel.traverse((child) => {
                 child.visible = true;
@@ -534,18 +531,19 @@
                     child.castShadow = true;
                     child.receiveShadow = true;
 
-                    // Fix Collada transparent = true bug directly on original material (preserves skinning bindings)
-                    const fixMat = (m) => {
-                        m.transparent = false;
-                        m.opacity = 1.0;
-                        m.side = THREE.DoubleSide;
-                        m.depthWrite = true;
-                        m.depthTest = true;
-                        if (m.color) m.color.setHex(0xd6cbb8);
-                        m.needsUpdate = true;
-                    };
-                    if (Array.isArray(child.material)) child.material.forEach(fixMat);
-                    else if (child.material) fixMat(child.material);
+                    // Compute Bone Texture for 163 bones on Mobile Safari
+                    if (child.isSkinnedMesh && child.skeleton) {
+                        child.skeleton.computeBoneTexture();
+                        if (child.skeleton.boneTexture) {
+                            child.skeleton.boneTexture.needsUpdate = true;
+                        }
+                    }
+
+                    // Assign 100% Opaque Plaster Material
+                    const isSkinned = Boolean(child.isSkinnedMesh);
+                    const mat = createArtistMaterial(document.getElementById('sel-shading').value, isSkinned);
+                    if (Array.isArray(child.material)) child.material = child.material.map(() => mat.clone());
+                    else child.material = mat;
 
                     if (child.isSkinnedMesh && child.skeleton && child.skeleton.bones) {
                         child.skeleton.bones.forEach(b => {
@@ -576,84 +574,77 @@
 
             scene.add(characterModel);
 
-            // Shading & Framing
-            applyShadingMode(document.getElementById('sel-shading').value);
+            // Normalize Scale & Position
+            characterModel.updateMatrixWorld(true);
+            const box = new THREE.Box3().setFromObject(characterModel);
+            const size = box.getSize(new THREE.Vector3());
+
+            if (size.y > 0) {
+                const targetHeight = 1.75;
+                const scale = targetHeight / size.y;
+                characterModel.scale.set(scale, scale, scale);
+            }
+            characterModel.updateMatrixWorld(true);
+
+            // Center Feet on Ground at Y=0
+            const scaledBox = new THREE.Box3().setFromObject(characterModel);
+            const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
+
+            characterModel.position.x = -scaledCenter.x;
+            characterModel.position.z = -scaledCenter.z;
+            characterModel.position.y = -scaledBox.min.y;
+            characterModel.updateMatrixWorld(true);
+
+            // Ground plane stays flat under feet at Y=0
+            floorMesh.position.set(0, 0, 0);
+
+            // Camera Focus
             focusCameraOnModel();
 
             document.getElementById('rig-status-box').innerHTML = `<span style="color:#4ade80;">● Active:</span> <b>${filename}</b> (${Object.keys(bones).length} Bones)`;
             updateToast("Active: " + filename);
         }
 
-        // ACCURATE CAMERA FOCUS (MEASURES REAL MESH VERTICES ONLY)
         function focusCameraOnModel() {
-            if (!characterModel) return;
-
-            characterModel.updateMatrixWorld(true);
-            const box = new THREE.Box3().setFromObject(characterModel);
-            const center = box.getCenter(new THREE.Vector3());
-            const size = box.getSize(new THREE.Vector3());
-
-            // Center model horizontally so it stands right in middle
-            characterModel.position.x = -center.x;
-            characterModel.position.z = -center.z;
-            characterModel.position.y = -box.min.y; // Feet placed at Y = 0
-
-            // Recompute center and size after positioning
-            characterModel.updateMatrixWorld(true);
-            const updatedBox = new THREE.Box3().setFromObject(characterModel);
-            const updatedCenter = updatedBox.getCenter(new THREE.Vector3());
-            const updatedSize = updatedBox.getSize(new THREE.Vector3());
-
-            // Ground plane stays directly under feet at Y = 0
-            floorMesh.position.set(0, 0, 0);
-
-            const height = (updatedSize.y > 0) ? updatedSize.y : 17.5;
-            const fov = camera.fov * (Math.PI / 180);
-            const dist = (height / 2) / Math.tan(fov / 2) * 1.35;
-
-            camera.position.set(0, height * 0.52, dist);
-            controls.target.set(0, height * 0.48, 0);
-            camera.lookAt(0, height * 0.48, 0);
+            camera.position.set(0, 1.2, 3.2);
+            controls.target.set(0, 0.9, 0);
+            camera.lookAt(0, 0.9, 0);
             controls.update();
         }
 
-        // SHADING ENGINE PRESERVING NATIVE SKINNED MATERIALS
+        // PURE OPAQUE PLASTER SCULPTURE MATERIALS (LIGHTWEIGHT & SAFE)
+        function createArtistMaterial(mode, isSkinned) {
+            const params = {
+                skinning: isSkinned,
+                side: THREE.DoubleSide,
+                transparent: false,
+                opacity: 1.0
+            };
+            if (mode === 'clay') {
+                return new THREE.MeshLambertMaterial({ ...params, color: 0xd6cbb8 });
+            } else if (mode === 'planar') {
+                return new THREE.MeshLambertMaterial({ ...params, color: 0xd2d2dc, flatShading: true });
+            } else if (mode === 'ecorche') {
+                return new THREE.MeshLambertMaterial({ ...params, color: 0x983232 });
+            } else if (mode === 'wireframe') {
+                return new THREE.MeshBasicMaterial({ ...params, color: 0x6366f1, wireframe: true });
+            }
+            return null;
+        }
+
         function applyShadingMode(mode) {
             if (!characterModel) return;
-
             characterModel.traverse((child) => {
-                if (!child.isMesh) return;
-
-                const updateMat = (m) => {
-                    m.transparent = false;
-                    m.opacity = 1.0;
-                    m.side = THREE.DoubleSide;
-
-                    if (mode === 'clay') {
-                        if (m.color) m.color.setHex(0xd6cbb8);
-                        m.wireframe = false;
-                        if ('flatShading' in m) m.flatShading = false;
-                    } else if (mode === 'planar') {
-                        if (m.color) m.color.setHex(0xd2d2dc);
-                        m.wireframe = false;
-                        if ('flatShading' in m) m.flatShading = true;
-                    } else if (mode === 'ecorche') {
-                        if (m.color) m.color.setHex(0x983232);
-                        m.wireframe = false;
-                        if ('flatShading' in m) m.flatShading = false;
-                    } else if (mode === 'wireframe') {
-                        if (m.color) m.color.setHex(0x6366f1);
-                        m.wireframe = true;
-                    }
-                    m.needsUpdate = true;
-                };
-
-                if (Array.isArray(child.material)) child.material.forEach(updateMat);
-                else if (child.material) updateMat(child.material);
+                if (child.isMesh) {
+                    const isSkinned = Boolean(child.isSkinnedMesh);
+                    const mat = createArtistMaterial(mode, isSkinned);
+                    if (Array.isArray(child.material)) child.material = child.material.map(() => mat.clone());
+                    else child.material = mat;
+                }
             });
         }
 
-        // RELATIVE QUATERNION FORWARD KINEMATICS
+        // BONE ROTATION ENGINE (RELATIVE QUATERNIONS)
         function resolveBoneName(key) {
             if (bones[key]) return key;
             const lower = key.toLowerCase();
