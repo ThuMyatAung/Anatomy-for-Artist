@@ -14,7 +14,7 @@
             background: rgba(28, 28, 38, 0.9); backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.2); color: #fff;
             padding: 8px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
-            cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.5); display: flex; align-items: center; gap: 6px;
+            cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
 
         #ui-panel {
@@ -72,8 +72,15 @@
         }
         .spinner { width: 34px; height: 34px; border: 3px solid #272738; border-top-color: #6366f1; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
         @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* On-screen Diagnostic Alert */
+        #error-console {
+            display: none; position: absolute; bottom: 12px; left: 12px; right: 12px;
+            background: rgba(220, 38, 38, 0.9); color: white; padding: 8px 12px;
+            border-radius: 8px; font-size: 11px; z-index: 200; font-family: monospace;
+        }
     </style>
-    <!-- Core Libraries -->
+    <!-- Three.js + OrbitControls + ColladaLoader + GLTFLoader + JSZip -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/ColladaLoader.js"></script>
@@ -82,6 +89,7 @@
 </head>
 <body>
     <button id="ui-toggle-btn" onclick="toggleUI()">👁️ Hide UI</button>
+    <div id="error-console"></div>
 
     <div id="loading-overlay">
         <div class="spinner"></div>
@@ -141,14 +149,11 @@
                     <option value="planar">Planar / Asaro (Planes of Light)</option>
                     <option value="ecorche">Ecorché (ကြွက်သားလွှာစတိုင်)</option>
                     <option value="wireframe">Wireframe</option>
+                    <option value="original">Original Colors</option>
                 </select>
             </div>
 
-            <div class="section-title">Height Adjustment</div>
-            <div class="control-group">
-                <label>Height: <span id="val-height">100%</span></label>
-                <input type="range" id="height-slider" min="70" max="130" value="100" oninput="adjustHeight(this.value)">
-            </div>
+            <button onclick="resetCameraFocus()" style="margin-top: 6px; width: 100%;">🎯 Center & Focus Model</button>
         </div>
 
         <!-- TAB 2: POSING & BONES -->
@@ -219,18 +224,20 @@
     </div>
 
     <script>
+        // Error Monitor for Mobile Screen
+        window.onerror = function(msg, url, line) {
+            const errBox = document.getElementById('error-console');
+            errBox.style.display = 'block';
+            errBox.innerText = "Error: " + msg + " (L" + line + ")";
+        };
+
         let isUIHidden = false;
         function toggleUI() {
             isUIHidden = !isUIHidden;
             const panel = document.getElementById('ui-panel');
             const btn = document.getElementById('ui-toggle-btn');
-            if (isUIHidden) {
-                panel.classList.add('hidden');
-                btn.innerText = "⚙️ Show UI";
-            } else {
-                panel.classList.remove('hidden');
-                btn.innerText = "👁️ Hide UI";
-            }
+            panel.classList.toggle('hidden', isUIHidden);
+            btn.innerText = isUIHidden ? "⚙️ Show UI" : "👁️ Hide UI";
         }
 
         function switchTab(id) {
@@ -282,7 +289,7 @@
             populateBoneDropdown();
         }
 
-        let scene, camera, renderer, controls;
+        let scene, camera, renderer, controls, floorMesh;
         let characterModel, bones = {}, initialBoneRotations = {};
         let keyLight, fillLight, rimLight, ambientLight;
         let loadedZip = null;
@@ -302,10 +309,13 @@
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x0e0e13);
 
-            camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
-            camera.position.set(0, 1.3, window.innerWidth <= 768 ? 4.2 : 3.6);
+            camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.05, 500);
+            camera.position.set(0, 1.2, 3.8);
 
-            renderer = new THREE.WebGLRenderer({ antialias: true });
+            // Force WebGL 2 with WebGL 1 Fallback for iOS stability
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, context: gl, antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.shadowMap.enabled = true;
@@ -317,13 +327,13 @@
             controls.target.set(0, 0.9, 0);
             controls.enableDamping = true;
 
-            const floor = new THREE.Mesh(
+            floorMesh = new THREE.Mesh(
                 new THREE.PlaneGeometry(12, 12),
-                new THREE.MeshStandardMaterial({ color: 0x14141c, roughness: 0.88 })
+                new THREE.MeshStandardMaterial({ color: 0x161622, roughness: 0.88 })
             );
-            floor.rotation.x = -Math.PI / 2;
-            floor.receiveShadow = true;
-            scene.add(floor);
+            floorMesh.rotation.x = -Math.PI / 2;
+            floorMesh.receiveShadow = true;
+            scene.add(floorMesh);
 
             setupLights();
             window.addEventListener('resize', onWindowResize);
@@ -333,7 +343,7 @@
         }
 
         function setupLights() {
-            ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
             scene.add(ambientLight);
 
             keyLight = new THREE.DirectionalLight(0xfff3e3, 1.5);
@@ -398,7 +408,7 @@
                 await onModelChange();
             } else {
                 setZipBadge(false, "models.zip Not Found");
-                document.getElementById('zip-error-msg').innerText = "models.zip ရှာမတွေ့ပါ (" + lastErr + ")။ Data tab မှ ZIP ကို ရွေးပေးပါခင်ဗျာ။";
+                document.getElementById('zip-error-msg').innerText = "GitHub Pages တွင် models.zip ရှာမတွေ့ပါ (" + lastErr + ")။ Data tab မှ ZIP ကို ရွေးပေးပါခင်ဗျာ။";
                 hideLoading();
             }
         }
@@ -455,65 +465,56 @@
             const { entry, fileName } = result;
             showLoading("Rendering " + fileName + "...");
 
-            if (fileName.toLowerCase().endsWith('.dae')) {
-                const text = await entry.async("text");
-                const collada = colladaLoader.parse(text, '');
-                processLoadedModel(collada.scene);
-            } else {
-                const arrayBuffer = await entry.async("arraybuffer");
-                gltfLoader.parse(arrayBuffer, '', (gltf) => {
-                    processLoadedModel(gltf.scene);
-                }, (err) => {
-                    alert("GLTF Error: " + err);
-                    hideLoading();
-                });
+            try {
+                if (fileName.toLowerCase().endsWith('.dae')) {
+                    const text = await entry.async("text");
+                    const collada = colladaLoader.parse(text, '');
+                    processLoadedModel(collada.scene);
+                } else {
+                    const arrayBuffer = await entry.async("arraybuffer");
+                    gltfLoader.parse(arrayBuffer, '', (gltf) => {
+                        processLoadedModel(gltf.scene);
+                    }, (err) => {
+                        alert("GLTF Error: " + err);
+                        hideLoading();
+                    });
+                }
+            } catch (err) {
+                alert("Model parse error: " + err.message);
+                hideLoading();
             }
         }
 
-        // ROBUST AUTO-SCALING & CENTERING
+        // ULTRA-ROBUST AUTO-SCALE, MULTI-MATERIAL & CAMERA FRAMING
         function processLoadedModel(model) {
             if (characterModel) scene.remove(characterModel);
             characterModel = model;
             bones = {};
             initialBoneRotations = {};
 
-            // 1. Reset transforms
-            characterModel.position.set(0, 0, 0);
-            characterModel.scale.set(1, 1, 1);
-            characterModel.rotation.set(0, 0, 0);
-            characterModel.updateMatrixWorld(true);
-
-            // 2. Measure raw bounds
-            let box = new THREE.Box3().setFromObject(characterModel);
-            let size = new THREE.Vector3();
-            box.getSize(size);
-
-            // MakeHuman decimeter scale fix: scale to standard human height (~1.75m)
-            if (size.y > 0) {
-                const targetHeight = 1.75;
-                const s = targetHeight / size.y;
-                characterModel.scale.set(s, s, s);
-                characterModel.updateMatrixWorld(true);
-            }
-
-            // 3. Align directly on the floor (y = 0) and center at x = 0, z = 0
-            box = new THREE.Box3().setFromObject(characterModel);
-            let center = new THREE.Vector3();
-            box.getCenter(center);
-            characterModel.position.set(-center.x, -box.min.y, -center.z);
-            characterModel.updateMatrixWorld(true);
-
-            // 4. Collect Bones and Save REST POSES
+            // 1. Force all objects visible & disable culling
             characterModel.traverse((child) => {
+                child.visible = true;
                 if (child.isMesh) {
-                    child.frustumCulled = false; // CRITICAL: prevents skinned mesh from disappearing!
+                    child.frustumCulled = false;
                     child.castShadow = true;
                     child.receiveShadow = true;
 
+                    // Fix MakeHuman Collada 100% Transparency Bug
+                    const fixMat = (m) => {
+                        m.transparent = false;
+                        m.opacity = 1.0;
+                        m.side = THREE.DoubleSide;
+                        m.needsUpdate = true;
+                    };
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(fixMat);
+                    } else if (child.material) {
+                        fixMat(child.material);
+                    }
+
                     if (child.isSkinnedMesh && child.skeleton && child.skeleton.bones) {
-                        child.skeleton.bones.forEach(b => {
-                            if (b && b.name) bones[b.name] = b;
-                        });
+                        child.skeleton.bones.forEach(b => { if (b && b.name) bones[b.name] = b; });
                     }
                 }
                 if (child.isBone || child.type === 'Bone') {
@@ -521,75 +522,92 @@
                 }
             });
 
-            // Cache Initial Rotations (Rest Pose)
+            // 2. Cache Initial Rotations
             Object.keys(bones).forEach(bName => {
                 const b = bones[bName];
-                initialBoneRotations[bName] = {
-                    x: b.rotation.x,
-                    y: b.rotation.y,
-                    z: b.rotation.z
-                };
+                initialBoneRotations[bName] = { x: b.rotation.x, y: b.rotation.y, z: b.rotation.z };
             });
 
+            // 3. Add to Scene First so matrixWorld computes accurately
             scene.add(characterModel);
 
-            // Update UI
+            // 4. Calculate True Bounds & Normalize Scale to 1.75m
+            characterModel.updateMatrixWorld(true);
+            let box = new THREE.Box3().setFromObject(characterModel);
+            let size = box.getSize(new THREE.Vector3());
+
+            if (size.y > 0) {
+                const s = 1.75 / size.y;
+                characterModel.scale.set(s, s, s);
+                characterModel.updateMatrixWorld(true);
+            }
+
+            // 5. Position feet flat at y = 0 and center model
+            box = new THREE.Box3().setFromObject(characterModel);
+            let center = box.getCenter(new THREE.Vector3());
+            characterModel.position.set(-center.x, -box.min.y, -center.z);
+            characterModel.updateMatrixWorld(true);
+
+            // 6. Align Ground Plane directly under feet
+            floorMesh.position.y = 0;
+
+            // 7. Auto Frame Camera to perfectly focus on the human body
+            resetCameraFocus();
+
+            // 8. Update UI Rig Status
             const numBones = Object.keys(bones).length;
             const rigStatus = document.getElementById('rig-status-box');
-            rigStatus.innerHTML = `<span style="color:#4ade80;">● Rig Active:</span> <b>${numBones}</b> Bones Ready!`;
+            rigStatus.innerHTML = `<span style="color:#4ade80;">● Model Active:</span> <b>${numBones}</b> Bones Connected`;
 
             populateBoneDropdown();
             applyShadingMode(document.getElementById('sel-shading').value);
-            adjustHeight(document.getElementById('height-slider').value);
-
-            // Set camera target cleanly to the middle of the human
-            controls.target.set(0, 0.9, 0);
-            controls.update();
 
             hideLoading();
         }
 
-        // SHADING MODES (DoubleSide to avoid backface culling)
-        function createStudioMaterial(type, isSkinned) {
-            const params = {
-                skinning: isSkinned,
-                side: THREE.DoubleSide
-            };
+        // Automatic Camera Fit Function
+        function resetCameraFocus() {
+            if (!characterModel) return;
+            const box = new THREE.Box3().setFromObject(characterModel);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const fov = camera.fov * (Math.PI / 180);
+            let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.35;
+
+            // Smoothly position camera in front of human
+            camera.position.set(0, center.y + size.y * 0.05, cameraZ);
+            controls.target.set(0, center.y, 0);
+            camera.lookAt(controls.target);
+            controls.update();
+        }
+
+        // MULTI-MATERIAL SAFE SHADING ENGINE
+        function createSingleMaterial(type) {
             if (type === 'clay') {
-                return new THREE.MeshStandardMaterial({
-                    ...params, color: 0xdfd7cb, roughness: 0.72, metalness: 0.0, flatShading: false
-                });
+                return new THREE.MeshStandardMaterial({ color: 0xdfd7cb, roughness: 0.72, metalness: 0.0, side: THREE.DoubleSide });
             } else if (type === 'planar') {
-                return new THREE.MeshStandardMaterial({
-                    ...params, color: 0xd6d6e2, roughness: 0.4, metalness: 0.05, flatShading: true
-                });
+                return new THREE.MeshStandardMaterial({ color: 0xd6d6e2, roughness: 0.4, metalness: 0.05, flatShading: true, side: THREE.DoubleSide });
             } else if (type === 'ecorche') {
-                return new THREE.MeshStandardMaterial({
-                    ...params, color: 0x933030, roughness: 0.45, metalness: 0.08, flatShading: true
-                });
+                return new THREE.MeshStandardMaterial({ color: 0x933030, roughness: 0.45, metalness: 0.08, side: THREE.DoubleSide });
             } else if (type === 'wireframe') {
-                return new THREE.MeshBasicMaterial({
-                    ...params, color: 0x6366f1, wireframe: true
-                });
+                return new THREE.MeshBasicMaterial({ color: 0x6366f1, wireframe: true });
             }
             return null;
         }
 
         function applyShadingMode(mode) {
-            if (!characterModel) return;
+            if (!characterModel || mode === 'original') return;
             characterModel.traverse((child) => {
                 if (!child.isMesh) return;
-                const isSkinned = !!child.isSkinnedMesh;
-                child.material = createStudioMaterial(mode, isSkinned);
-                child.material.needsUpdate = true;
+                // Preserve material arrays to prevent WebGLRenderer crashes
+                if (Array.isArray(child.material)) {
+                    child.material = child.material.map(() => createSingleMaterial(mode));
+                } else {
+                    child.material = createSingleMaterial(mode);
+                }
             });
-        }
-
-        function adjustHeight(val) {
-            document.getElementById('val-height').innerText = val + '%';
-            if (!characterModel) return;
-            const currentScaleX = characterModel.scale.x;
-            characterModel.scale.y = currentScaleX * (parseFloat(val) / 100.0);
         }
 
         function populateBoneDropdown() {
@@ -631,7 +649,6 @@
             const initRot = initialBoneRotations[name] || { x:0, y:0, z:0 };
             if (!b) return;
 
-            // Display delta degrees from rest pose
             const rx = Math.round(THREE.MathUtils.radToDeg(b.rotation.x - initRot.x));
             const ry = Math.round(THREE.MathUtils.radToDeg(b.rotation.y - initRot.y));
             const rz = Math.round(THREE.MathUtils.radToDeg(b.rotation.z - initRot.z));
@@ -654,7 +671,6 @@
             const dy = parseFloat(document.getElementById('rot-y').value);
             const dz = parseFloat(document.getElementById('rot-z').value);
 
-            // Add rotation relative to initial rest pose
             b.rotation.x = initRot.x + THREE.MathUtils.degToRad(dx);
             b.rotation.y = initRot.y + THREE.MathUtils.degToRad(dy);
             b.rotation.z = initRot.z + THREE.MathUtils.degToRad(dz);
@@ -700,7 +716,11 @@
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
-            renderer.render(scene, camera);
+            try {
+                renderer.render(scene, camera);
+            } catch (e) {
+                console.error("Render Loop Error:", e);
+            }
         }
 
         window.onload = init;
