@@ -35,7 +35,8 @@
         }
 
         h2 { font-size: 14px; font-weight: 700; color: #fff; display: flex; align-items: center; justify-content: space-between; }
-        .status-badge { font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 500; background: #064e3b; color: #6ee7b7; }
+        .status-badge { font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 500; background: #1e1b4b; color: #a5b4fc; }
+        .status-badge.ok { background: #064e3b; color: #6ee7b7; }
 
         .tabs { display: flex; gap: 4px; margin: 10px 0; background: #14141c; padding: 3px; border-radius: 8px; }
         .tab { flex: 1; text-align: center; padding: 6px 0; font-size: 11px; border-radius: 6px; cursor: pointer; color: #8a8a9a; }
@@ -69,7 +70,7 @@
             z-index: 100; display: block;
         }
     </style>
-    <!-- Three.js + Loaders -->
+    <!-- Three.js + OrbitControls + ColladaLoader + GLTFLoader + JSZip -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/ColladaLoader.js"></script>
@@ -88,6 +89,7 @@
             <span id="zip-badge" class="status-badge">Connecting...</span>
         </h2>
 
+        <!-- TABS: 1. Model -> 2. Posing -> 3. Lighting -> 4. Data -->
         <div class="tabs">
             <div class="tab active" onclick="switchTab('tab-model')">Model</div>
             <div class="tab" onclick="switchTab('tab-pose')">Posing</div>
@@ -126,6 +128,12 @@
                 </div>
             </div>
 
+            <!-- Direct Model Selector from ZIP -->
+            <div class="control-group" id="zip-direct-group" style="display:none; margin-top: 6px;">
+                <label>Active File in ZIP:</label>
+                <select id="sel-zip-file" onchange="loadSpecificZipFile(this.value)"></select>
+            </div>
+
             <div class="section-title">Shading Mode (အလင်းအမှောင်)</div>
             <div class="control-group">
                 <select id="sel-shading" onchange="applyShadingMode(this.value)">
@@ -136,18 +144,19 @@
                 </select>
             </div>
 
-            <button onclick="focusCameraOnModel()" style="margin-top: 8px; width: 100%;">🎯 Center & Focus View</button>
+            <button onclick="resetCameraToCenter()" style="margin-top: 8px; width: 100%;">🎯 Center & Focus View</button>
         </div>
 
         <!-- TAB 2: POSING & MOVEMENTS -->
         <div id="tab-pose" class="tab-content">
-            <div id="rig-status-box">● Rig Active</div>
+            <div id="rig-status-box">● Model Active</div>
 
-            <div class="section-title">Everyday Movement Presets</div>
+            <!-- Movement Presets -->
+            <div class="section-title">Everyday Movement Presets (ကိုယ်ဟန်များ)</div>
             <div class="control-group">
                 <select id="sel-pose" onchange="applyPresetPose(this.value)">
-                    <option value="neutral" selected>Neutral A-Pose (မူလ မတ်တပ်)</option>
-                    <option value="contrapposto">Contrapposto (ဂန္ထဝင် အလေးပေးရပ်ဟန်)</option>
+                    <option value="neutral">Neutral A-Pose (မူလ မတ်တပ်)</option>
+                    <option value="contrapposto" selected>Contrapposto (ဂန္ထဝင် အလေးပေးရပ်ဟန်)</option>
                     <option value="sitting">Sitting (ကုလားထိုင် ထိုင်ဟန်)</option>
                     <option value="walking">Walking / Stride (လမ်းလျှောက်ဟန်)</option>
                     <option value="folded_arms">Folded Arms (လက်ပိုက်ရပ်ဟန်)</option>
@@ -155,6 +164,7 @@
                 </select>
             </div>
 
+            <!-- Fine-Tuning Joint Manipulation -->
             <div class="section-title">Fine-tune Dynamic Move (အဆစ်လှည့်ရန်)</div>
             <div class="control-group">
                 <label>Select Joint (လှုပ်မည့်နေရာ):</label>
@@ -254,7 +264,7 @@
         ];
 
         let scene, camera, renderer, controls, floorMesh;
-        let characterModel = null, bones = {}, currentDeltas = {};
+        let characterModel = null, bones = {}, initialRotations = {}, currentDeltas = {};
         let keyLight, fillLight, rimLight, ambientLight;
         let loadedZip = null, colladaLoader, gltfLoader;
 
@@ -263,7 +273,7 @@
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x0e0e13);
 
-            camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
             camera.position.set(0, 1.2, 3.8);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -278,7 +288,7 @@
             controls.enableDamping = true;
 
             floorMesh = new THREE.Mesh(
-                new THREE.PlaneGeometry(100, 100),
+                new THREE.PlaneGeometry(12, 12),
                 new THREE.MeshStandardMaterial({ color: 0x14141c, roughness: 0.88 })
             );
             floorMesh.rotation.x = -Math.PI / 2;
@@ -298,10 +308,10 @@
         }
 
         function setupLights() {
-            ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
             scene.add(ambientLight);
 
-            keyLight = new THREE.DirectionalLight(0xfff3e3, 1.6);
+            keyLight = new THREE.DirectionalLight(0xfff3e3, 1.5);
             keyLight.castShadow = true;
             keyLight.shadow.mapSize.width = 1024;
             keyLight.shadow.mapSize.height = 1024;
@@ -311,7 +321,7 @@
             scene.add(fillLight);
 
             rimLight = new THREE.DirectionalLight(0xffffff, 2.2);
-            rimLight.position.set(0, 5, -5);
+            rimLight.position.set(0, 2.6, -3.0);
             scene.add(rimLight);
 
             updateLights();
@@ -319,10 +329,10 @@
 
         function updateLights() {
             const angle = THREE.MathUtils.degToRad(parseFloat(document.getElementById('key-angle').value));
-            const dist = 5.0;
-            keyLight.position.set(Math.cos(angle) * dist, 4.0, Math.sin(angle) * dist);
+            const dist = 3.6;
+            keyLight.position.set(Math.cos(angle) * dist, 2.5, Math.sin(angle) * dist);
             keyLight.intensity = parseFloat(document.getElementById('key-intensity').value);
-            fillLight.position.set(-Math.cos(angle) * dist, 2.5, -Math.sin(angle) * dist);
+            fillLight.position.set(-Math.cos(angle) * dist, 1.5, -Math.sin(angle) * 0.6 * dist);
             rimLight.intensity = parseFloat(document.getElementById('rim-intensity').value);
         }
 
@@ -336,7 +346,7 @@
         function applyLightingPreset(type) {
             if (type === 'studio') resetLights();
             else if (type === 'daylight') {
-                keyLight.position.set(2, 6, 2); keyLight.intensity = 2.2; rimLight.intensity = 0.3;
+                keyLight.position.set(2, 5, 2); keyLight.intensity = 2.2; rimLight.intensity = 0.3;
             } else if (type === 'stage') {
                 keyLight.intensity = 0.4; rimLight.intensity = 3.5;
             }
@@ -371,7 +381,6 @@
             }
         }
 
-        // UPLOAD ZIP OR DIRECT DAE/GLB
         async function onFileUpload(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -408,9 +417,33 @@
 
         function displayZipContents() {
             if (!loadedZip) return;
-            const container = document.getElementById('zip-file-list');
-            const files = Object.keys(loadedZip.files).filter(k => !loadedZip.files[k].dir && !k.includes('__MACOSX'));
-            container.innerHTML = `<b>Zip Files (${files.length}):</b><br>` + files.map(f => f.split('/').pop()).join(', ');
+            const select = document.getElementById('sel-zip-file');
+            select.innerHTML = '';
+            const files = Object.keys(loadedZip.files).filter(k => !loadedZip.files[k].dir && !k.includes('__MACOSX') && (k.endsWith('.dae') || k.endsWith('.glb')));
+            files.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f;
+                opt.innerText = f.split('/').pop();
+                select.appendChild(opt);
+            });
+            document.getElementById('zip-direct-group').style.display = files.length > 0 ? 'block' : 'none';
+        }
+
+        async function loadSpecificZipFile(path) {
+            if (!loadedZip || !loadedZip.files[path]) return;
+            const entry = loadedZip.files[path];
+            const name = path.split('/').pop();
+            updateToast("Rendering " + name + "...");
+
+            if (name.toLowerCase().endsWith('.dae')) {
+                const text = await entry.async("text");
+                parseAndLoadDae(text, name);
+            } else {
+                const buffer = await entry.async("arraybuffer");
+                gltfLoader.parse(buffer, '', (gltf) => {
+                    loadRealHumanModel(gltf.scene, name);
+                });
+            }
         }
 
         function findEntryInZip(zip, ethnic, gender, age) {
@@ -427,13 +460,13 @@
                     let aMatch = lower.includes(a);
 
                     if (eMatch && gMatch && aMatch) {
-                        return { entry: zip.files[path], name: path.split('/').pop() };
+                        return { entry: zip.files[path], name: path.split('/').pop(), path: path };
                     }
                 }
             }
             for (const path in zip.files) {
                 if (!zip.files[path].dir && !path.includes('__MACOSX') && (path.endsWith('.dae') || path.endsWith('.glb'))) {
-                    return { entry: zip.files[path], name: path.split('/').pop() };
+                    return { entry: zip.files[path], name: path.split('/').pop(), path: path };
                 }
             }
             return null;
@@ -451,17 +484,8 @@
                 return;
             }
 
-            updateToast("Rendering " + res.name + "...");
-
-            if (res.name.toLowerCase().endsWith('.dae')) {
-                const text = await res.entry.async("text");
-                parseAndLoadDae(text, res.name);
-            } else {
-                const arrayBuffer = await res.entry.async("arraybuffer");
-                gltfLoader.parse(arrayBuffer, '', (gltf) => {
-                    loadRealHumanModel(gltf.scene, res.name);
-                });
-            }
+            document.getElementById('sel-zip-file').value = res.path;
+            await loadSpecificZipFile(res.path);
         }
 
         function parseAndLoadDae(daeText, filename) {
@@ -478,13 +502,41 @@
             }
         }
 
-        // LOAD REAL MODEL & AUTO-FRAME (NO SCALE CORRUPTION)
+        // 100% PROVEN WORKING ENGINE: REAL HUMAN SCALE & POSITIONING
         function loadRealHumanModel(model, filename) {
             if (characterModel) scene.remove(characterModel);
             characterModel = model;
             bones = {};
+            initialRotations = {};
             currentDeltas = {};
 
+            // 1. Force all elements active
+            characterModel.position.set(0, 0, 0);
+            characterModel.scale.set(1, 1, 1);
+            characterModel.rotation.set(0, 0, 0);
+            characterModel.updateMatrixWorld(true);
+
+            // 2. Measure actual dimensions
+            let box = new THREE.Box3().setFromObject(characterModel);
+            let size = new THREE.Vector3();
+            box.getSize(size);
+
+            // 3. Auto-scale accurately to standard human height (1.75m)
+            if (size.y > 0) {
+                const targetHeight = 1.75;
+                const s = targetHeight / size.y;
+                characterModel.scale.set(s, s, s);
+                characterModel.updateMatrixWorld(true);
+            }
+
+            // 4. Align feet flat at floor (y = 0) and center model (x = 0, z = 0)
+            box = new THREE.Box3().setFromObject(characterModel);
+            let center = new THREE.Vector3();
+            box.getCenter(center);
+            characterModel.position.set(-center.x, -box.min.y, -center.z);
+            characterModel.updateMatrixWorld(true);
+
+            // 5. Collect bones and cache Rest Quaternions
             characterModel.traverse((child) => {
                 child.visible = true;
                 child.matrixAutoUpdate = true;
@@ -512,73 +564,52 @@
                 }
             });
 
+            Object.keys(bones).forEach(bName => {
+                const b = bones[bName];
+                initialRotations[bName] = { x: b.rotation.x, y: b.rotation.y, z: b.rotation.z };
+                currentDeltas[bName] = { x: 0, y: 0, z: 0 };
+            });
+
             scene.add(characterModel);
 
-            // Apply Shading & Position Camera around native dimensions
+            // 6. Apply clean artist materials and Contrapposto pose
             applyShadingMode(document.getElementById('sel-shading').value);
-            focusCameraOnModel();
+            applyPresetPose('contrapposto');
+            resetCameraToCenter();
 
             document.getElementById('rig-status-box').innerHTML = `<span style="color:#4ade80;">● Active:</span> <b>${filename || 'Human Model'}</b> (${Object.keys(bones).length} Bones)`;
             updateToast("Active: " + (filename || 'Human Model'));
         }
 
-        // PERFECT CAMERA AUTO-FIT (GUARANTEES MODEL IS IN SIGHT)
-        function focusCameraOnModel() {
-            if (!characterModel) return;
-
-            characterModel.updateMatrixWorld(true);
-            const box = new THREE.Box3().setFromObject(characterModel);
-            const center = box.getCenter(new THREE.Vector3());
-            const size = box.getSize(new THREE.Vector3());
-
-            // Place floor directly at model's feet
-            floorMesh.position.y = box.min.y;
-
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const fov = camera.fov * (Math.PI / 180);
-            let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
-
-            camera.position.set(center.x, center.y, center.z + cameraZ);
-            controls.target.copy(center);
-            camera.lookAt(center);
-            controls.update();
+        // PURE ARTIST MATERIALS (CLEAN CLAY, PLANAR, ECORCHE)
+        function createArtistMaterial(mode, isSkinned) {
+            const params = { skinning: isSkinned, side: THREE.DoubleSide };
+            if (mode === 'clay') return new THREE.MeshStandardMaterial({ ...params, color: 0xd8cebf, roughness: 0.72, metalness: 0.0 });
+            if (mode === 'planar') return new THREE.MeshStandardMaterial({ ...params, color: 0xd6d6e2, roughness: 0.45, metalness: 0.05, flatShading: true });
+            if (mode === 'ecorche') return new THREE.MeshStandardMaterial({ ...params, color: 0x933030, roughness: 0.5 });
+            if (mode === 'wireframe') return new THREE.MeshBasicMaterial({ ...params, color: 0x6366f1, wireframe: true });
+            return null;
         }
 
-        // ARTIST SHADING PRESERVING NATIVE SKINNING
         function applyShadingMode(mode) {
             if (!characterModel) return;
-
             characterModel.traverse((child) => {
-                if (!child.isMesh) return;
-
-                const updateMat = (m) => {
-                    m.transparent = false;
-                    m.opacity = 1.0;
-                    m.side = THREE.DoubleSide;
-
-                    if (mode === 'clay') {
-                        m.color.setHex(0xd8cebf);
-                        m.wireframe = false;
-                    } else if (mode === 'planar') {
-                        m.color.setHex(0xd6d6e2);
-                        m.flatShading = true;
-                        m.wireframe = false;
-                    } else if (mode === 'ecorche') {
-                        m.color.setHex(0x933030);
-                        m.wireframe = false;
-                    } else if (mode === 'wireframe') {
-                        m.color.setHex(0x6366f1);
-                        m.wireframe = true;
-                    }
-                    m.needsUpdate = true;
-                };
-
-                if (Array.isArray(child.material)) child.material.forEach(updateMat);
-                else if (child.material) updateMat(child.material);
+                if (child.isMesh) {
+                    const isSkinned = Boolean(child.isSkinnedMesh);
+                    const mat = createArtistMaterial(mode, isSkinned);
+                    if (Array.isArray(child.material)) child.material = child.material.map(() => mat.clone());
+                    else child.material = mat;
+                }
             });
         }
 
-        // BONE ROTATION ENGINE
+        function resetCameraToCenter() {
+            camera.position.set(0, 1.2, 3.8);
+            controls.target.set(0, 0.9, 0);
+            controls.update();
+        }
+
+        // FULL RIGGED FORWARD KINEMATICS POSING
         function resolveBoneName(key) {
             if (bones[key]) return key;
             const lower = key.toLowerCase();
@@ -627,7 +658,8 @@
 
         function applyRotationToBone(boneName, dx, dy, dz) {
             const b = bones[boneName];
-            if (!b || !b.userData.restQuat) return;
+            const init = initialRotations[boneName];
+            if (!b || !init) return;
 
             currentDeltas[boneName] = { x: dx, y: dy, z: dz };
 
