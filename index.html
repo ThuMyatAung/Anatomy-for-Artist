@@ -72,8 +72,9 @@
         }
         .spinner { width: 34px; height: 34px; border: 3px solid #272738; border-top-color: #6366f1; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        .dismiss-btn { margin-top: 14px; padding: 5px 12px; font-size: 11px; background: #2f2f3d; border: 1px solid #444; border-radius: 6px; color: #aaa; }
     </style>
-    <!-- Three.js + OrbitControls + ColladaLoader + GLTFLoader + JSZip -->
+    <!-- Core Three.js and Loaders -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/ColladaLoader.js"></script>
@@ -86,6 +87,7 @@
     <div id="loading-overlay">
         <div class="spinner"></div>
         <p id="loading-text">Loading Anatomy Models...</p>
+        <button class="dismiss-btn" onclick="hideLoading()">✕ Dismiss Loading</button>
     </div>
 
     <div id="canvas-container"></div>
@@ -96,7 +98,7 @@
             <span id="zip-badge" class="status-badge warn">Checking ZIP...</span>
         </h2>
 
-        <!-- TABS ORDER: Model -> Posing -> Lighting -> Data -->
+        <!-- TABS ORDER: 1. Model -> 2. Posing -> 3. Lighting -> 4. Data -->
         <div class="tabs">
             <div class="tab active" onclick="switchTab('tab-model')">Model</div>
             <div class="tab" onclick="switchTab('tab-pose')">Posing</div>
@@ -142,10 +144,11 @@
                     <option value="planar">Planar / Asaro (Planes of Light)</option>
                     <option value="ecorche">Ecorché (ကြွက်သားလွှာစတိုင်)</option>
                     <option value="wireframe">Wireframe</option>
+                    <option value="original">Original Mesh Colors</option>
                 </select>
             </div>
 
-            <button onclick="resetCameraToCenter()" style="margin-top: 8px; width: 100%;">🎯 Center View</button>
+            <button onclick="resetCameraToCenter()" style="margin-top: 8px; width: 100%;">🎯 Center & Focus View</button>
         </div>
 
         <!-- TAB 2: POSING & MOVEMENTS -->
@@ -158,7 +161,7 @@
                 <select id="sel-pose" onchange="applyPresetPose(this.value)">
                     <option value="neutral" selected>Neutral A-Pose (မူလ မတ်တပ်)</option>
                     <option value="contrapposto">Contrapposto (ဂန္ထဝင် အလေးပေးရပ်ဟန်)</option>
-                    <option value="sitting">Sitting (ကုလားထိုင် ထိုင်ဟန်)</option>
+                    <option value="sitting">Sitting (ထိုင်ဟန်)</option>
                     <option value="walking">Walking / Stride (လမ်းလျှောက်ဟန်)</option>
                     <option value="folded_arms">Folded Arms (လက်ပိုက်ရပ်ဟန်)</option>
                 </select>
@@ -189,7 +192,7 @@
             </div>
             <div class="grid-2" style="margin-top: 6px;">
                 <button onclick="resetCurrentBone()">Reset Selected</button>
-                <button onclick="resetAllBonesToRestPose()">Reset All to Rest Pose</button>
+                <button onclick="resetAllBonesToRestPose()">Reset All to Rest</button>
             </div>
         </div>
 
@@ -266,13 +269,11 @@
             { key: 'spine03', label: 'Chest / Thorax (ရင်အုပ်)' },
             { key: 'spine01', label: 'Waist / Lower Spine (ခါး)' },
             { key: 'root', label: 'Pelvis / Hips (တင်ပါးဆုံ)' },
-            { key: 'clavicle_L', label: 'Left Shoulder (ဘယ်ပခုံး)' },
             { key: 'upperarm01_L', label: 'Left Upper Arm (ဘယ်လက်မောင်း)' },
-            { key: 'lowerarm01_L', label: 'Left Forearm (ဘယ်လက်ဖျံ)' },
+            { key: 'lowerarm01_L', label: 'Left Forearm (ဘယ်လက်ဖျံ/တံတောင်)' },
             { key: 'wrist_L', label: 'Left Wrist (ဘယ်လက်ကောက်ဝတ်)' },
-            { key: 'clavicle_R', label: 'Right Shoulder (ညာပခုံး)' },
             { key: 'upperarm01_R', label: 'Right Upper Arm (ညာလက်မောင်း)' },
-            { key: 'lowerarm01_R', label: 'Right Forearm (ညာလက်ဖျံ)' },
+            { key: 'lowerarm01_R', label: 'Right Forearm (ညာလက်ဖျံ/တံတောင်)' },
             { key: 'wrist_R', label: 'Right Wrist (ညာလက်ကောက်ဝတ်)' },
             { key: 'upperleg01_L', label: 'Left Thigh (ဘယ်ပေါင်)' },
             { key: 'lowerleg01_L', label: 'Left Knee (ဘယ်ဒူးခေါင်း)' },
@@ -290,7 +291,7 @@
         }
 
         let scene, camera, renderer, controls, floorMesh;
-        let characterModel, bones = {}, currentBoneDeltas = {};
+        let characterModel = null, bones = {}, initialBoneRotations = {}, currentBoneDeltas = {};
         let keyLight, fillLight, rimLight, ambientLight;
         let loadedZip = null;
         const colladaLoader = new THREE.ColladaLoader();
@@ -304,7 +305,6 @@
             document.getElementById('loading-overlay').style.display = 'none';
         }
 
-        // 1. PROVEN STABLE RENDERER SETUP (Never fails on iOS)
         function init() {
             const container = document.getElementById('canvas-container');
             scene = new THREE.Scene();
@@ -313,7 +313,7 @@
             camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
             camera.position.set(0, 1.2, 3.8);
 
-            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.shadowMap.enabled = true;
@@ -340,7 +340,7 @@
         }
 
         function setupLights() {
-            ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
             scene.add(ambientLight);
 
             keyLight = new THREE.DirectionalLight(0xfff3e3, 1.5);
@@ -399,10 +399,16 @@
             }
 
             if (foundBlob) {
-                loadedZip = await JSZip.loadAsync(foundBlob);
-                setZipBadge(true, "models.zip Loaded");
-                document.getElementById('zip-error-msg').innerText = "";
-                await onModelChange();
+                try {
+                    loadedZip = await JSZip.loadAsync(foundBlob);
+                    setZipBadge(true, "models.zip Loaded");
+                    document.getElementById('zip-error-msg').innerText = "";
+                    await onModelChange();
+                } catch (e) {
+                    setZipBadge(false, "ZIP Read Error");
+                    document.getElementById('zip-error-msg').innerText = "ZIP ဖိုင် ဖတ်မရပါ: " + e.message;
+                    hideLoading();
+                }
             } else {
                 setZipBadge(false, "models.zip Not Found");
                 document.getElementById('zip-error-msg').innerText = "GitHub Pages တွင် models.zip ရှာမတွေ့ပါ (" + lastErr + ")။ Data tab မှ ZIP ကို ရွေးပေးပါခင်ဗျာ။";
@@ -433,17 +439,27 @@
 
         function findEntryInZip(zip, baseTarget) {
             const cleanTarget = baseTarget.toLowerCase().replace(/[^a-z0-9]/g, '');
+            // 1. Exact match
             for (const path in zip.files) {
                 if (zip.files[path].dir || path.includes('__MACOSX') || path.startsWith('.')) continue;
                 const fileName = path.split('/').pop();
                 const cleanName = fileName.substring(0, fileName.lastIndexOf('.')).toLowerCase().replace(/[^a-z0-9]/g, '');
                 if (cleanName === cleanTarget) return { entry: zip.files[path], fileName: fileName };
             }
+            // 2. Partial fallback match
+            for (const path in zip.files) {
+                if (zip.files[path].dir || path.includes('__MACOSX') || path.startsWith('.')) continue;
+                const fileName = path.split('/').pop().toLowerCase();
+                if (fileName.endsWith('.dae') || fileName.endsWith('.glb')) {
+                    return { entry: zip.files[path], fileName: path.split('/').pop() };
+                }
+            }
             return null;
         }
 
         async function onModelChange() {
             if (!loadedZip) {
+                hideLoading();
                 switchTab('tab-file');
                 return;
             }
@@ -456,6 +472,7 @@
 
             if (!result) {
                 alert("ZIP ထဲတွင် " + baseTarget + " မော်ဒယ်ဖိုင် ရှာမတွေ့ပါခင်ဗျာ။");
+                hideLoading();
                 return;
             }
 
@@ -482,66 +499,85 @@
             }
         }
 
-        // 2. STABLE SCALING, POSITIONING & REST POSE CACHING
+        // STABLE BONE AND MODEL PROCESSING
         function processLoadedModel(model) {
-            if (characterModel) scene.remove(characterModel);
-            characterModel = model;
-            bones = {};
-            currentBoneDeltas = {};
+            try {
+                if (characterModel) scene.remove(characterModel);
+                characterModel = model;
+                bones = {};
+                initialBoneRotations = {};
+                currentBoneDeltas = {};
 
-            // Auto-scale decimeter to human size
-            const box = new THREE.Box3().setFromObject(characterModel);
-            const size = new THREE.Vector3();
-            box.getSize(size);
-            if (size.y > 5.0) {
-                const s = 1.75 / size.y;
-                characterModel.scale.set(s, s, s);
+                // Enable matrix auto-update on every node so bones rotate correctly
+                characterModel.traverse((child) => {
+                    child.visible = true;
+                    child.matrixAutoUpdate = true;
+                    if (child.isMesh) {
+                        child.frustumCulled = false;
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+
+                        if (child.isSkinnedMesh && child.skeleton && child.skeleton.bones) {
+                            child.skeleton.bones.forEach(b => {
+                                if (b && b.name) {
+                                    b.matrixAutoUpdate = true;
+                                    bones[b.name] = b;
+                                }
+                            });
+                        }
+                    }
+                    if (child.isBone || child.type === 'Bone') {
+                        if (child.name) {
+                            child.matrixAutoUpdate = true;
+                            bones[child.name] = child;
+                        }
+                    }
+                });
+
+                // Cache initial rest orientation
+                Object.keys(bones).forEach(bName => {
+                    const b = bones[bName];
+                    initialBoneRotations[bName] = { x: b.rotation.x, y: b.rotation.y, z: b.rotation.z };
+                    currentBoneDeltas[bName] = { x: 0, y: 0, z: 0 };
+                });
+
+                scene.add(characterModel);
+
+                // Auto-scale to standard 1.75m height
+                const box = new THREE.Box3();
+                characterModel.traverse((child) => {
+                    if (child.isMesh) box.expandByObject(child);
+                });
+
+                const size = box.getSize(new THREE.Vector3());
+                if (size.y > 0) {
+                    const s = 1.75 / size.y;
+                    characterModel.scale.set(s, s, s);
+                }
+
+                // Center model on floor
+                const newBox = new THREE.Box3();
+                characterModel.traverse((child) => {
+                    if (child.isMesh) newBox.expandByObject(child);
+                });
+                const center = newBox.getCenter(new THREE.Vector3());
+                characterModel.position.set(-center.x, -newBox.min.y, -center.z);
+                characterModel.updateMatrixWorld(true);
+
+                const numBones = Object.keys(bones).length;
+                const rigStatus = document.getElementById('rig-status-box');
+                rigStatus.innerHTML = `<span style="color:#4ade80;">● Model Active:</span> <b>${numBones}</b> Bones Ready for Posing!`;
+
+                populateBoneDropdown();
+                applyShadingMode(document.getElementById('sel-shading').value);
+                resetCameraToCenter();
+
+                document.getElementById('sel-pose').value = 'neutral';
+            } catch (err) {
+                console.error("Processing error:", err);
+            } finally {
+                hideLoading();
             }
-
-            // Align feet to floor at y = 0
-            const newBox = new THREE.Box3().setFromObject(characterModel);
-            characterModel.position.set(0, -newBox.min.y, 0);
-
-            // Collect bones and cache REST QUATERNION
-            characterModel.traverse((child) => {
-                if (child.isMesh) {
-                    child.frustumCulled = false;
-                    child.castShadow = true;
-                    child.receiveShadow = true;
-
-                    if (child.isSkinnedMesh && child.skeleton && child.skeleton.bones) {
-                        child.skeleton.bones.forEach(b => {
-                            if (b && b.name) {
-                                bones[b.name] = b;
-                                if (!b.userData.restQuat) b.userData.restQuat = b.quaternion.clone();
-                                currentBoneDeltas[b.name] = { x: 0, y: 0, z: 0 };
-                            }
-                        });
-                    }
-                }
-                if (child.isBone || child.type === 'Bone') {
-                    if (child.name) {
-                        bones[child.name] = child;
-                        if (!child.userData.restQuat) child.userData.restQuat = child.quaternion.clone();
-                        currentBoneDeltas[child.name] = { x: 0, y: 0, z: 0 };
-                    }
-                }
-            });
-
-            scene.add(characterModel);
-
-            const numBones = Object.keys(bones).length;
-            const rigStatus = document.getElementById('rig-status-box');
-            rigStatus.innerHTML = `<span style="color:#4ade80;">● Model Active:</span> <b>${numBones}</b> Bones Ready for Posing!`;
-
-            populateBoneDropdown();
-            applyShadingMode(document.getElementById('sel-shading').value);
-
-            // Start in clean Natural A-Pose
-            document.getElementById('sel-pose').value = 'neutral';
-            resetCameraToCenter();
-
-            hideLoading();
         }
 
         function resetCameraToCenter() {
@@ -550,18 +586,18 @@
             controls.update();
         }
 
-        // 3. SHADING ENGINE WITH ACCURATE SKINNING FLAG
-        function createMaterial(type, isSkinned) {
+        // Lightweight Lambert Material - Safe for 163-bone mobile limits
+        function createSafeMaterial(type, isSkinned) {
             const params = {
                 skinning: isSkinned,
                 side: THREE.DoubleSide
             };
             if (type === 'clay') {
-                return new THREE.MeshStandardMaterial({ ...params, color: 0xdfd7cb, roughness: 0.72, metalness: 0.0, flatShading: false });
+                return new THREE.MeshLambertMaterial({ ...params, color: 0xdfd7cb });
             } else if (type === 'planar') {
-                return new THREE.MeshStandardMaterial({ ...params, color: 0xd6d6e2, roughness: 0.4, metalness: 0.05, flatShading: true });
+                return new THREE.MeshLambertMaterial({ ...params, color: 0xd6d6e2, flatShading: true });
             } else if (type === 'ecorche') {
-                return new THREE.MeshStandardMaterial({ ...params, color: 0x933030, roughness: 0.45, metalness: 0.08, flatShading: true });
+                return new THREE.MeshLambertMaterial({ ...params, color: 0x933030 });
             } else if (type === 'wireframe') {
                 return new THREE.MeshBasicMaterial({ ...params, color: 0x6366f1, wireframe: true });
             }
@@ -573,16 +609,23 @@
             characterModel.traverse((child) => {
                 if (!child.isMesh) return;
                 const isSkinned = Boolean(child.isSkinnedMesh);
-                const newMat = createMaterial(mode, isSkinned);
-                if (Array.isArray(child.material)) {
-                    child.material = child.material.map(() => newMat.clone());
+
+                if (mode === 'original') {
+                    const fix = (m) => { m.skinning = isSkinned; m.transparent = false; m.opacity = 1.0; m.side = THREE.DoubleSide; m.needsUpdate = true; };
+                    if (Array.isArray(child.material)) child.material.forEach(fix);
+                    else if (child.material) fix(child.material);
                 } else {
-                    child.material = newMat;
+                    const newMat = createSafeMaterial(mode, isSkinned);
+                    if (Array.isArray(child.material)) {
+                        child.material = child.material.map(() => newMat.clone());
+                    } else {
+                        child.material = newMat;
+                    }
                 }
             });
         }
 
-        // 4. FORWARD KINEMATICS (FK) RELATIVE ROTATION ENGINE
+        // BONE DROPDOWN & SLIDERS
         function resolveBoneName(key) {
             if (bones[key]) return key;
             const lower = key.toLowerCase();
@@ -641,31 +684,28 @@
             const dy = parseFloat(document.getElementById('rot-y').value);
             const dz = parseFloat(document.getElementById('rot-z').value);
 
-            applyRelativeRotation(name, dx, dy, dz);
+            applyRotationToBone(name, dx, dy, dz);
 
             document.getElementById('val-rx').innerText = dx + '°';
             document.getElementById('val-ry').innerText = dy + '°';
             document.getElementById('val-rz').innerText = dz + '°';
         }
 
-        // Relative Local Bone Rotation (Protects bone roll & skeleton structure)
-        function applyRelativeRotation(boneName, dx, dy, dz) {
+        // Active Bone Rotation with Matrix & Skeleton Update
+        function applyRotationToBone(boneName, dx, dy, dz) {
             const b = bones[boneName];
-            if (!b || !b.userData.restQuat) return;
+            const init = initialBoneRotations[boneName];
+            if (!b || !init) return;
 
             currentBoneDeltas[boneName] = { x: dx, y: dy, z: dz };
 
-            const deltaEuler = new THREE.Euler(
-                THREE.MathUtils.degToRad(dx),
-                THREE.MathUtils.degToRad(dy),
-                THREE.MathUtils.degToRad(dz),
-                'XYZ'
-            );
-            const deltaQuat = new THREE.Quaternion().setFromEuler(deltaEuler);
+            b.rotation.x = init.x + THREE.MathUtils.degToRad(dx);
+            b.rotation.y = init.y + THREE.MathUtils.degToRad(dy);
+            b.rotation.z = init.z + THREE.MathUtils.degToRad(dz);
 
-            b.quaternion.copy(b.userData.restQuat).multiply(deltaQuat);
+            b.updateMatrix();
+            b.updateMatrixWorld(true);
 
-            // Force skeleton matrix updates
             characterModel.traverse((child) => {
                 if (child.isSkinnedMesh && child.skeleton) {
                     child.skeleton.update();
@@ -678,74 +718,69 @@
             document.getElementById('rot-x').value = 0;
             document.getElementById('rot-y').value = 0;
             document.getElementById('rot-z').value = 0;
-            applyRelativeRotation(name, 0, 0, 0);
+            applyRotationToBone(name, 0, 0, 0);
             loadBoneRotations();
         }
 
         function resetAllBonesToRestPose() {
             Object.keys(bones).forEach(bName => {
                 const b = bones[bName];
-                if (b && b.userData.restQuat) {
-                    b.quaternion.copy(b.userData.restQuat);
+                const init = initialBoneRotations[bName];
+                if (b && init) {
+                    b.rotation.set(init.x, init.y, init.z);
+                    b.updateMatrix();
+                    b.updateMatrixWorld(true);
                     currentBoneDeltas[bName] = { x: 0, y: 0, z: 0 };
                 }
             });
             characterModel.traverse((child) => {
-                if (child.isSkinnedMesh && child.skeleton) {
-                    child.skeleton.update();
-                }
+                if (child.isSkinnedMesh && child.skeleton) child.skeleton.update();
             });
             loadBoneRotations();
         }
 
-        // 5. NATURAL MOVEMENT PRESETS
+        // PRESET EVERYDAY MOVEMENTS
         function applyPresetPose(pose) {
             resetAllBonesToRestPose();
 
             const applyDelta = (key, dx, dy, dz) => {
                 const name = resolveBoneName(key);
-                if (name) applyRelativeRotation(name, dx, dy, dz);
+                if (name) applyRotationToBone(name, dx, dy, dz);
             };
 
             if (pose === 'contrapposto') {
-                // Weight on right leg, left leg relaxed forward, shoulders counter-tilted
-                applyDelta('root', 0, 0, 5);
-                applyDelta('spine01', -2, 3, -6);
-                applyDelta('spine03', 2, -2, 3);
-                applyDelta('head', 4, -12, 4);
+                applyDelta('root', 0, 0, 4);
+                applyDelta('spine01', -2, 3, -5);
+                applyDelta('spine03', 2, -2, 2);
+                applyDelta('head', 3, -10, 3);
                 applyDelta('upperleg01_R', -3, 0, 2);
-                applyDelta('upperleg01_L', 15, -6, -6);
-                applyDelta('lowerleg01_L', -22, 0, 0);
-                applyDelta('upperarm01_R', 10, 0, 12);
-                applyDelta('lowerarm01_R', 0, 0, 25);
-                applyDelta('upperarm01_L', 6, 0, -8);
+                applyDelta('upperleg01_L', 14, -5, -5);
+                applyDelta('lowerleg01_L', -18, 0, 0);
+                applyDelta('upperarm01_R', 10, 0, 10);
+                applyDelta('lowerarm01_R', 0, 0, 20);
+                applyDelta('upperarm01_L', 5, 0, -8);
             } else if (pose === 'sitting') {
-                // Thighs 80 deg forward, knees 85 deg bent
-                applyDelta('upperleg01_L', -80, 5, 0);
-                applyDelta('upperleg01_R', -80, -5, 0);
-                applyDelta('lowerleg01_L', 85, 0, 0);
-                applyDelta('lowerleg01_R', 85, 0, 0);
-                applyDelta('spine01', 6, 0, 0);
-                applyDelta('lowerarm01_L', -25, 0, 0);
-                applyDelta('lowerarm01_R', -25, 0, 0);
-            } else if (pose === 'walking') {
-                // Dynamic walk stride
-                applyDelta('upperleg01_R', -30, 4, 0);
-                applyDelta('lowerleg01_R', 35, 0, 0);
-                applyDelta('upperleg01_L', 20, -4, 0);
-                applyDelta('lowerleg01_L', -12, 0, 0);
-                applyDelta('upperarm01_L', -30, 8, 12);
+                applyDelta('upperleg01_L', -75, 4, 0);
+                applyDelta('upperleg01_R', -75, -4, 0);
+                applyDelta('lowerleg01_L', 80, 0, 0);
+                applyDelta('lowerleg01_R', 80, 0, 0);
+                applyDelta('spine01', 5, 0, 0);
                 applyDelta('lowerarm01_L', -20, 0, 0);
-                applyDelta('upperarm01_R', 25, -4, -12);
-                applyDelta('spine01', 3, -12, 0);
-                applyDelta('head', -2, 8, 0);
+                applyDelta('lowerarm01_R', -20, 0, 0);
+            } else if (pose === 'walking') {
+                applyDelta('upperleg01_R', -25, 3, 0);
+                applyDelta('lowerleg01_R', 30, 0, 0);
+                applyDelta('upperleg01_L', 18, -3, 0);
+                applyDelta('lowerleg01_L', -10, 0, 0);
+                applyDelta('upperarm01_L', -25, 6, 10);
+                applyDelta('lowerarm01_L', -15, 0, 0);
+                applyDelta('upperarm01_R', 20, -3, -10);
+                applyDelta('spine01', 2, -10, 0);
             } else if (pose === 'folded_arms') {
-                // Folded arms across chest
-                applyDelta('upperarm01_L', 18, 30, 18);
-                applyDelta('lowerarm01_L', -70, 18, 25);
-                applyDelta('upperarm01_R', 18, -30, -18);
-                applyDelta('lowerarm01_R', -70, -18, -25);
-                applyDelta('head', 4, 0, 0);
+                applyDelta('upperarm01_L', 15, 25, 15);
+                applyDelta('lowerarm01_L', -65, 15, 20);
+                applyDelta('upperarm01_R', 15, -25, -15);
+                applyDelta('lowerarm01_R', -65, -15, -20);
             }
 
             loadBoneRotations();
